@@ -74,6 +74,8 @@ class NmrConverseWorkChain(WorkChain):
                    help='Computational resources (num_machines, num_mpiprocs_per_machine, etc.)')
         spec.input('q_gipaw', valid_type=orm.Float, required=False, default=lambda: orm.Float(0.01),
                    help='GIPAW q parameter')
+        spec.input('kpoints_distance', valid_type=orm.Float,
+           help='K-points distance in inverse Angstrom (e.g., 0.15)')
         spec.input('mixing_beta', valid_type=orm.Float, required=False, default=lambda: orm.Float(0.5),
                    help='Mixing beta parameter for converse')
         spec.input('dudk_method', valid_type=orm.Str, required=False, default=lambda: orm.Str('covariant'),
@@ -132,6 +134,9 @@ class NmrConverseWorkChain(WorkChain):
     def run_scf(self):
         """Run the SCF calculation with -k symmetry disabled."""
         self.report('Submitting SCF calculation')
+
+        pseudo_dict = self.inputs.pseudos.get_dict()
+        pseudos = {kind: orm.load_node(pk) for kind, pk in pseudo_dict.items()}
         
         # Prepare inputs for PwBaseWorkChain
         inputs = {
@@ -139,11 +144,12 @@ class NmrConverseWorkChain(WorkChain):
                 'code': self.inputs.pw_code,
                 'structure': self.inputs.structure,
                 'parameters': self.inputs.scf_parameters,
-                'pseudos': self.inputs.pseudos.get_dict(),
+                'pseudos': pseudos,
                 'metadata': {
                     'options': self.inputs.options.get_dict(),
                 }
-            }
+            },
+            'kpoints_distance': self.inputs.kpoints_distance,
         }
         
         # Submit the calculation

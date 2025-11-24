@@ -80,9 +80,9 @@ def prepare_scf_parameters():
         'CONTROL': {
             'calculation': 'scf',
             'restart_mode': 'from_scratch',
-            'prefix': 'nmr',
-            'pseudo_dir': './pseudo/',
-            'outdir': './scratch/',
+            # 'prefix': 'nmr',
+            # 'pseudo_dir': './pseudo/',
+            # 'outdir': './scratch/',
             'verbosity': 'high',
         },
         'SYSTEM': {
@@ -177,6 +177,7 @@ def main():
         'pseudos': pseudos,
         'target_atoms': target_atoms,
         'options': options,
+        'kpoints_distance': orm.Float(0.15),
         'q_gipaw': orm.Float(0.01),
         'mixing_beta': orm.Float(0.5),
         'dudk_method': orm.Str('covariant'),
