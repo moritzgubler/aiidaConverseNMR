@@ -53,7 +53,7 @@ def test_codes():
     
     # Test pw.x code
     try:
-        pw_code = orm.load_code('pw@localhost')
+        pw_code = orm.load_code('qe-7.2@merlin')
         print(f"✓ pw.x code found: {pw_code.label}@{pw_code.computer.label}")
     except Exception as e:
         print(f"✗ pw.x code not found: {e}")
@@ -62,7 +62,7 @@ def test_codes():
     
     # Test qe-converse code
     try:
-        conv_code = orm.load_code('qe-converse@localhost')
+        conv_code = orm.load_code('qe-converse@merlin')
         print(f"✓ qe-converse code found: {conv_code.label}@{conv_code.computer.label}")
     except Exception as e:
         print(f"✗ qe-converse code not found: {e}")
@@ -229,8 +229,8 @@ def create_minimal_inputs():
     
     try:
         # Codes
-        pw_code = orm.load_code('pw@localhost')
-        conv_code = orm.load_code('qe-converse@localhost')
+        pw_code = orm.load_code('qe-7.2@merlin')
+        conv_code = orm.load_code('qe-converse@merlin')
         
         # Structure
         structure = orm.StructureData(cell=[

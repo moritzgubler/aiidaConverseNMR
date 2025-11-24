@@ -1,23 +1,28 @@
 """
 AiiDA CalcJob plugin for qe-converse.x
 
-This plugin allows running qe-converse calculations within AiiDA.
+This plugin tells AiiDA how to run qe-converse calculations.
 """
 
 from aiida import orm
 from aiida.common import datastructures, exceptions
 from aiida.engine import CalcJob
-from aiida_quantumespresso.calculations import BasePwCpInputGenerator
 import os
 
 
 class QeConverseCalculation(CalcJob):
     """
     AiiDA CalcJob plugin for qe-converse.x calculations.
+    
+    This class defines how to:
+    1. Prepare input files
+    2. Run the calculation
+    3. Retrieve output files
     """
     
     _DEFAULT_INPUT_FILE = 'aiida.in'
     _DEFAULT_OUTPUT_FILE = 'aiida.out'
+    _DEFAULT_PARENT_FOLDER_NAME = 'out'
     
     @classmethod
     def define(cls, spec):
@@ -29,16 +34,26 @@ class QeConverseCalculation(CalcJob):
                    help='Input parameters for qe-converse')
         spec.input('parent_folder', valid_type=orm.RemoteData,
                    help='Remote folder from previous SCF calculation')
-        spec.input('metadata.options.resources', valid_type=dict, required=True)
-        spec.input('metadata.options.withmpi', valid_type=bool, default=True)
+        spec.input('metadata.options.resources', valid_type=dict, required=True,
+                   help='Computational resources')
+        spec.input('metadata.options.withmpi', valid_type=bool, default=True,
+                   help='Run with MPI')
         spec.input('metadata.options.input_filename', valid_type=str,
-                   default=cls._DEFAULT_INPUT_FILE)
+                   default=cls._DEFAULT_INPUT_FILE,
+                   help='Name of input file')
         spec.input('metadata.options.output_filename', valid_type=str,
-                   default=cls._DEFAULT_OUTPUT_FILE)
+                   default=cls._DEFAULT_OUTPUT_FILE,
+                   help='Name of output file')
+        spec.input('metadata.options.parent_folder_name', valid_type=str,
+                   default=cls._DEFAULT_PARENT_FOLDER_NAME,
+                   help='Name of parent folder to symlink (usually "out")')
         
         # Output specifications
-        spec.output('output_parameters', valid_type=orm.Dict,
+        spec.output('output_parameters', valid_type=orm.Dict, required=True,
                     help='Output parameters parsed from the calculation')
+        
+        # Default parser
+        spec.inputs['metadata']['options']['parser_name'].default = 'qeconverse'
         
         # Exit codes
         spec.exit_code(300, 'ERROR_NO_RETRIEVED_FOLDER',
@@ -47,6 +62,8 @@ class QeConverseCalculation(CalcJob):
                       message='The output file could not be read or parsed')
         spec.exit_code(320, 'ERROR_CONVERGENCE',
                       message='The calculation did not converge')
+        spec.exit_code(330, 'ERROR_OUTPUT_INCOMPLETE',
+                      message='The output file is incomplete or missing expected content')
     
     def prepare_for_submission(self, folder):
         """
@@ -69,8 +86,9 @@ class QeConverseCalculation(CalcJob):
         # Prepare CalcInfo
         calcinfo = datastructures.CalcInfo()
         calcinfo.uuid = str(self.uuid)
-        calcinfo.codes_info = [datastructures.CodeInfo()]
         
+        # Code information
+        calcinfo.codes_info = [datastructures.CodeInfo()]
         codeinfo = calcinfo.codes_info[0]
         codeinfo.cmdline_params = []
         codeinfo.stdin_name = input_filename
@@ -83,14 +101,15 @@ class QeConverseCalculation(CalcJob):
             self.metadata.options.output_filename,
         ]
         
-        # Local copy list (for outdir from parent calculation)
+        # Symlink parent folder (SCF results)
         calcinfo.remote_symlink_list = []
         if 'parent_folder' in self.inputs:
             parent_folder = self.inputs.parent_folder
+            parent_folder_name = self.metadata.options.parent_folder_name
             calcinfo.remote_symlink_list.append((
                 parent_folder.computer.uuid,
-                os.path.join(parent_folder.get_remote_path(), 'out'),
-                'out'
+                os.path.join(parent_folder.get_remote_path(), parent_folder_name),
+                parent_folder_name
             ))
         
         return calcinfo
@@ -107,7 +126,7 @@ class QeConverseCalculation(CalcJob):
         """
         lines = []
         
-        # Write input_qeconverse namelist
+        # Get parameters from input_qeconverse namelist
         if 'input_qeconverse' in parameters:
             params = parameters['input_qeconverse']
         else:
@@ -122,8 +141,9 @@ class QeConverseCalculation(CalcJob):
                 value_str = f"'{value}'"
             elif isinstance(value, list):
                 # Handle array parameters
-                if key == 'm_0':
-                    value_str = f"{value[0]}, {value[1]}, {value[2]}"
+                if key == 'm_0' or key == 'lambda_so':
+                    # Write as comma-separated values
+                    value_str = ', '.join(str(v) for v in value)
                 else:
                     value_str = ', '.join(str(v) for v in value)
             else:
@@ -135,73 +155,3 @@ class QeConverseCalculation(CalcJob):
         lines.append('')
         
         return '\n'.join(lines)
-
-
-class QeConverseParser(orm.Parser):
-    """
-    Parser for qe-converse.x output files.
-    """
-    
-    def parse(self, **kwargs):
-        """
-        Parse the output file of a qe-converse calculation.
-        """
-        try:
-            output_folder = self.retrieved
-        except exceptions.NotExistent:
-            return self.exit_codes.ERROR_NO_RETRIEVED_FOLDER
-        
-        # Read output file
-        try:
-            with output_folder.open(self.node.get_option('output_filename'), 'r') as handle:
-                output_text = handle.read()
-        except (OSError, IOError):
-            return self.exit_codes.ERROR_OUTPUT_FILES
-        
-        # Parse the output
-        result_dict = self._parse_output(output_text)
-        
-        if result_dict is None:
-            return self.exit_codes.ERROR_OUTPUT_FILES
-        
-        # Set outputs
-        self.out('output_parameters', orm.Dict(dict=result_dict))
-    
-    def _parse_output(self, output_text):
-        """
-        Parse the output text to extract chemical shift values.
-        
-        Args:
-            output_text: string content of the output file
-            
-        Returns:
-            Dictionary with parsed values
-        """
-        result = {
-            'chemical_shift': [0.0, 0.0, 0.0],
-            'converged': False
-        }
-        
-        lines = output_text.split('\n')
-        
-        for line in lines:
-            # Look for chemical shift line
-            # Example: "Chemical shift (ppm)     12.345  23.456  34.567"
-            if 'Chemical shift (ppm)' in line:
-                parts = line.split()
-                if len(parts) >= 6:
-                    try:
-                        result['chemical_shift'] = [
-                            float(parts[3]),
-                            float(parts[4]),
-                            float(parts[5])
-                        ]
-                    except (ValueError, IndexError):
-                        pass
-            
-            # Check for convergence
-            if 'convergence has been achieved' in line.lower() or \
-               'convergence achieved' in line.lower():
-                result['converged'] = True
-        
-        return result

@@ -169,6 +169,9 @@ class NmrConverseWorkChain(WorkChain):
         """Submit all converse calculations for each atom and direction."""
         self.report('Submitting converse calculations')
         
+        from aiida.plugins import CalculationFactory
+        QeConverseCalculation = CalculationFactory('qeconverse')
+        
         structure = self.inputs.structure
         base_params = self.inputs.converse_parameters.get_dict()
         
@@ -210,9 +213,9 @@ class NmrConverseWorkChain(WorkChain):
                     }
                 }
                 
-                # Submit calculation
+                # Submit calculation using the proper CalcJob
                 calc_label = f'{atom_label}_{direction}'
-                running = self.submit(orm.CalcJobNode, **inputs)
+                running = self.submit(QeConverseCalculation, **inputs)
                 converse_calcs[calc_label] = running
                 
                 self.report(f'Submitted converse calculation for {atom_label} ({direction}) <{running.pk}>')

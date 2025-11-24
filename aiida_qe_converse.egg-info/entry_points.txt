@@ -1,0 +1,5 @@
+[aiida.calculations]
+qeconverse = aiida_qe_converse.calculations.qeconverse:QeConverseCalculation
+
+[aiida.parsers]
+qeconverse = aiida_qe_converse.parsers.qeconverse:QeConverseParser
