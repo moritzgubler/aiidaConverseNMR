@@ -11,3 +11,5 @@ aiida_qe_converse/calculations/__init__.py
 aiida_qe_converse/calculations/qeconverse.py
 aiida_qe_converse/parsers/__init__.py
 aiida_qe_converse/parsers/qeconverse.py
+aiida_qe_converse/workflows/__init__.py
+aiida_qe_converse/workflows/nmr_converse_workchain.py

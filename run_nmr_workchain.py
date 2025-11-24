@@ -16,7 +16,7 @@ Before running this script, make sure:
 
 from aiida import orm, load_profile
 from aiida.engine import submit
-from aiida_quantumespresso.data.pseudopotential import upload_pseudo_family
+# from aiida_quantumespresso.data.pseudopotential import upload_pseudo_family
 import numpy as np
 
 # Load AiiDA profile
@@ -28,78 +28,47 @@ def setup_codes():
     Setup or retrieve AiiDA codes.
     Modify these to match your setup.
     """
-    # Get pw.x code
-    # Option 1: If already set up
-    pw_code = orm.load_code('pw@localhost')
-    
-    # Option 2: Set up new code (example)
-    # pw_code = orm.Code()
-    # pw_code.label = 'pw'
-    # pw_code.description = 'Quantum ESPRESSO pw.x'
-    # pw_code.set_remote_computer_exec((computer, '/path/to/pw.x'))
-    # pw_code.set_input_plugin_name('quantumespresso.pw')
-    # pw_code.store()
-    
-    # Get qe-converse code
-    # You need to set this up similarly
-    converse_code = orm.load_code('qe-converse@localhost')
-    
+    pw_code = orm.load_code('qe-7.2@merlin')  # Your pw code
+    converse_code = orm.load_code('qe-converse@merlin')  # Your converse code
     return pw_code, converse_code
 
 
 def create_structure():
-    """
-    Create the crystal structure for Na3Ir3O8.
-    Modify this to load your actual structure.
-    """
-    # Example: Load from a CIF or other file
-    # structure = orm.StructureData(pymatgen=pymatgen_structure)
+    """Load structure from EXTXYZ file"""
+    from ase.io import read
     
-    # Or create manually
-    from aiida.plugins import DataFactory
-    StructureData = DataFactory('core.structure')
-    
-    # This is a placeholder - replace with your actual structure
-    structure = StructureData()
-    structure.set_cell([
-        [10.0, 0.0, 0.0],
-        [0.0, 10.0, 0.0],
-        [0.0, 0.0, 10.0]
-    ])
-    
-    # Add atoms (example)
-    # structure.append_atom(position=(0, 0, 0), symbols='Ir', name='Ir1')
-    # ... add all your atoms
-    
-    # Or load from file
-    # from ase.io import read
-    # ase_structure = read('your_structure.cif')
-    # structure = StructureData(ase=ase_structure)
+    ase_structure = read('nairo.extxyz')
+    structure = orm.StructureData(ase=ase_structure)
     
     return structure
 
-
 def get_pseudopotentials():
-    """
-    Get pseudopotentials for the calculation.
-    You need to have these uploaded to AiiDA.
-    """
-    # Option 1: Use a pseudo family
-    from aiida_quantumespresso.data.pseudopotential import get_pseudos_from_structure
+    """Get custom GIPAW pseudopotentials."""
+    from aiida.orm import QueryBuilder, Group
     
-    pseudo_family_name = 'SSSP_1.3_PBE_efficiency'  # or your family name
+    # Load your pseudo family
+    pseudo_family = Group.collection.get(label='gipaw')  # Changed from 'gipwaw'
+    
+    # Get structure
     structure = create_structure()
-    pseudos = get_pseudos_from_structure(structure, pseudo_family_name)
     
+    # Get pseudos for each element in the structure
+    pseudos = {}
+    for kind in structure.get_kind_names():
+        # Find the pseudo for this element
+        qb = QueryBuilder()
+        qb.append(Group, filters={'label': 'gipaw'}, tag='group')  # Changed here too
+        qb.append(orm.UpfData, with_group='group', 
+                  filters={'attributes.element': kind})
+        results = qb.all()
+        
+        if results:
+            pseudos[kind] = results[0][0].pk
+        else:
+            raise ValueError(f"No pseudo found for element {kind} in gipaw family")
+    
+    # return pseudos  # Return dict directly, NOT orm.Dict(dict=pseudos)
     return orm.Dict(dict=pseudos)
-    
-    # Option 2: Specify manually
-    # pseudos = {
-    #     'Ir': orm.load_node(pseudo_pk_for_Ir),
-    #     'Na': orm.load_node(pseudo_pk_for_Na),
-    #     'O': orm.load_node(pseudo_pk_for_O),
-    # }
-    # return orm.Dict(dict=pseudos)
 
 
 def prepare_scf_parameters():
@@ -155,9 +124,9 @@ def prepare_options():
     options = {
         'resources': {
             'num_machines': 1,
-            'num_mpiprocs_per_machine': 64,
+            'num_mpiprocs_per_machine': 32,
         },
-        'max_wallclock_seconds': 3600 * 2,  # 2 hours
+        'max_wallclock_seconds': 3600 * 4,  # 2 hours
         'queue_name': 'your_queue_name',  # If applicable
     }
     
@@ -181,6 +150,8 @@ def main():
     
     # 3. Get pseudopotentials
     pseudos = get_pseudopotentials()
+    print("Pseudopotentials dictionary type:")
+    print(type(pseudos))
     print("Pseudopotentials loaded")
     
     # 4. Prepare parameters
@@ -194,7 +165,8 @@ def main():
     print(f"Will compute chemical shifts for atoms: {target_atoms.get_list()}")
     
     # 6. Prepare inputs for the workchain
-    from nmr_converse_workchain import NmrConverseWorkChain
+    # from nmr_converse_workchain import NmrConverseWorkChain
+    from aiida_qe_converse.workflows.nmr_converse_workchain import NmrConverseWorkChain
     
     inputs = {
         'structure': structure,

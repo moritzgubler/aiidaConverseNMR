@@ -251,10 +251,19 @@ def create_minimal_inputs():
         
         # Pseudos (you need to have at least Na pseudo)
         # This will fail if you don't have pseudos - that's expected
-        from aiida_quantumespresso.data.pseudopotential import get_pseudos_from_structure
         try:
+            from aiida_quantumespresso.data.pseudopotential import get_pseudos_from_structure
             pseudos = get_pseudos_from_structure(structure, 'SSSP/1.3/PBE/efficiency')
             pseudos = orm.Dict(dict=pseudos)
+        except ImportError:
+            # Try newer API
+            try:
+                from aiida_pseudo.data.pseudo import get_pseudos_from_structure
+                pseudos_dict = get_pseudos_from_structure(structure, 'SSSP/1.3/PBE/efficiency')
+                pseudos = orm.Dict(dict={k: v.pk for k, v in pseudos_dict.items()})
+            except:
+                print("⚠ Could not load pseudopotentials - using dummy")
+                pseudos = orm.Dict(dict={'Na': None})
         except:
             print("⚠ Could not load pseudopotentials - using dummy")
             pseudos = orm.Dict(dict={'Na': None})
