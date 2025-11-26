@@ -194,6 +194,7 @@ class NmrConverseWorkChain(WorkChain):
                 # Prepare converse parameters
                 params = base_params.copy()
                 params['prefix'] = prefix
+                params['outdir'] = './out/'
                 params['q_gipaw'] = self.inputs.q_gipaw.value
                 params['dudk_method'] = self.inputs.dudk_method.value
                 params['mixing_beta'] = self.inputs.mixing_beta.value

@@ -37,7 +37,7 @@ def create_structure():
     """Load structure from EXTXYZ file"""
     from ase.io import read
     
-    ase_structure = read('nairo.extxyz')
+    ase_structure = read('quartz.extxyz')
     structure = orm.StructureData(ase=ase_structure)
     
     return structure
@@ -86,8 +86,8 @@ def prepare_scf_parameters():
             'verbosity': 'high',
         },
         'SYSTEM': {
-            'ecutwfc': 50.0,  # Adjust based on your pseudopotentials
-            'ecutrho': 400.0,
+            'ecutwfc': 70.0,  # Adjust based on your pseudopotentials
+            # 'ecutrho': 70.0,
             'occupations': 'smearing',
             'smearing': 'gaussian',
             'degauss': 0.01,
@@ -124,7 +124,7 @@ def prepare_options():
     options = {
         'resources': {
             'num_machines': 1,
-            'num_mpiprocs_per_machine': 32,
+            'num_mpiprocs_per_machine': 16,
         },
         'max_wallclock_seconds': 3600 * 4,  # 2 hours
         'queue_name': 'your_queue_name',  # If applicable
@@ -161,7 +161,7 @@ def main():
     
     # 5. Define target atoms (0-indexed)
     # Based on your bash script: atoms 1, 3, 4, 5 (1-indexed) -> 0, 2, 3, 4 (0-indexed)
-    target_atoms = orm.List(list=[0, 2, 3, 4])
+    target_atoms = orm.List(list=[0, 1, 2, 3, 4, 5, 6, 7, 8])
     print(f"Will compute chemical shifts for atoms: {target_atoms.get_list()}")
     
     # 6. Prepare inputs for the workchain
@@ -177,7 +177,7 @@ def main():
         'pseudos': pseudos,
         'target_atoms': target_atoms,
         'options': options,
-        'kpoints_distance': orm.Float(0.15),
+        'kpoints_distance': orm.Float(0.3),
         'q_gipaw': orm.Float(0.01),
         'mixing_beta': orm.Float(0.5),
         'dudk_method': orm.Str('covariant'),
