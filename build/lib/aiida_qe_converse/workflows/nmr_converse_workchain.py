@@ -279,12 +279,13 @@ class NmrConverseWorkChain(WorkChain):
                 except (AttributeError, KeyError) as e:
                     self.report(f'Failed to parse output for {calc_label}: {e}')
                     return self.exit_codes.ERROR_PARSING_FAILED
-        
-        # Store chemical shifts
-        self.out('chemical_shifts', orm.Dict(dict=chemical_shifts))
-        
+
+        # Store and output chemical shifts
+        chemical_shifts_node = orm.Dict(dict=chemical_shifts).store()
+        self.out('chemical_shifts', chemical_shifts_node)
+
         # Compute isotropic shielding
-        isotropic = compute_isotropic_shielding(orm.Dict(dict=chemical_shifts))
+        isotropic = compute_isotropic_shielding(chemical_shifts_node)
         self.out('isotropic_shielding', isotropic)
     
     def finalize(self):
@@ -292,7 +293,7 @@ class NmrConverseWorkChain(WorkChain):
         self.report('NMR converse workchain completed successfully')
         
         # Print summary
-        isotropic_dict = self.outputs.isotropic_shielding.get_dict()
-        self.report('Isotropic shielding values:')
-        for atom_label, values in isotropic_dict.items():
-            self.report(f"  {atom_label}: {values['isotropic']:.3f} ppm")
+        # isotropic_dict = self.outputs.isotropic_shielding.get_dict()
+        # self.report('Isotropic shielding values:')
+        # for atom_label, values in isotropic_dict.items():
+        #     self.report(f"  {atom_label}: {values['isotropic']:.3f} ppm")

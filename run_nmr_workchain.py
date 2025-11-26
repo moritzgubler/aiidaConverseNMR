@@ -37,7 +37,7 @@ def create_structure():
     """Load structure from EXTXYZ file"""
     from ase.io import read
     
-    ase_structure = read('quartz.extxyz')
+    ase_structure = read('t.extxyz')
     structure = orm.StructureData(ase=ase_structure)
     
     return structure
@@ -86,17 +86,18 @@ def prepare_scf_parameters():
             'verbosity': 'high',
         },
         'SYSTEM': {
-            'ecutwfc': 70.0,  # Adjust based on your pseudopotentials
+            'ecutwfc': 80.0,  # Adjust based on your pseudopotentials
             # 'ecutrho': 70.0,
-            'occupations': 'smearing',
-            'smearing': 'gaussian',
-            'degauss': 0.01,
+                # 'occupations': 'smearing',
+                # 'smearing': 'gaussian',
+                # 'degauss': 0.01,
             'nosym': True,  # CRITICAL: Disable symmetry for NMR
             'noinv': True,  # CRITICAL: Disable inversion symmetry
+            'nbnd' : 30
         },
         'ELECTRONS': {
-            'conv_thr': 1.0e-8,
-            'mixing_beta': 0.7,
+            'conv_thr': 1.0e-10,
+            'mixing_beta': 0.5,
         },
     }
     
@@ -177,7 +178,7 @@ def main():
         'pseudos': pseudos,
         'target_atoms': target_atoms,
         'options': options,
-        'kpoints_distance': orm.Float(0.3),
+        'kpoints_distance': orm.Float(0.15),
         'q_gipaw': orm.Float(0.01),
         'mixing_beta': orm.Float(0.5),
         'dudk_method': orm.Str('covariant'),
