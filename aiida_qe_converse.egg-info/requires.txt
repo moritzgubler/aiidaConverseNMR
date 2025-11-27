@@ -1,2 +1,0 @@
-aiida-core>=2.0.0
-aiida-quantumespresso>=4.0.0
