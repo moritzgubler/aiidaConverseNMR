@@ -16,29 +16,28 @@ import numpy as np
 
 
 @calcfunction
-def compute_isotropic_shielding(shift_data_dict):
+def compute_isotropic_shielding(tensor_data_dict):
     """
-    Compute isotropic shielding (trace/3) from chemical shift data.
+    Compute isotropic shielding from full chemical shift tensors.
     
     Args:
-        shift_data_dict: Dictionary containing chemical shift values for each atom
-                        Format: {atom_label: {'x': value, 'y': value, 'z': value}}
+        tensor_data_dict: Dictionary with 3x3 tensors for each atom
+                         Format: {atom_label: [[xx,xy,xz], [yx,yy,yz], [zx,zy,zz]]}
     
     Returns:
-        Dictionary with isotropic shielding values for each atom
+        Dictionary with tensor components and isotropic shielding values
     """
     results = {}
-    shift_dict = shift_data_dict.get_dict()
+    tensor_dict = tensor_data_dict.get_dict()
     
-    for atom_label, directions in shift_dict.items():
-        trace = directions['x'] + directions['y'] + directions['z']
+    for atom_label, tensor in tensor_dict.items():
+        trace = tensor[0][0] + tensor[1][1] + tensor[2][2]
         isotropic = trace / 3.0
+        
         results[atom_label] = {
-            'xx': directions['x'],
-            'yy': directions['y'],
-            'zz': directions['z'],
-            'trace': trace,
-            'isotropic': isotropic
+            # 'absolute_shift_tensor_ppm': tensor,  # Full 3x3 tensor
+            'isotropic_shielding_ppm': isotropic,
+            # Optionally add anisotropy, asymmetry, etc.
         }
     
     return orm.Dict(dict=results)
@@ -95,9 +94,9 @@ class NmrConverseWorkChain(WorkChain):
         # Output specifications
         spec.output('scf_remote_folder', valid_type=orm.RemoteData,
                     help='Remote folder containing SCF results')
-        spec.output('chemical_shifts', valid_type=orm.Dict,
+        spec.output('absolute_shift_tensor_ppm', valid_type=orm.Dict,
                     help='Chemical shift tensor components for each atom')
-        spec.output('isotropic_shielding', valid_type=orm.Dict,
+        spec.output('isotropic_shielding_ppm', valid_type=orm.Dict,
                     help='Isotropic shielding values for each atom')
         
         # Exit codes
@@ -251,48 +250,49 @@ class NmrConverseWorkChain(WorkChain):
         self.report('All converse calculations completed successfully')
     
     def compute_results(self):
-        """Parse results and compute isotropic shielding."""
+        """Parse results and build full chemical shift tensor."""
         self.report('Computing chemical shifts and isotropic shielding')
-        
-        chemical_shifts = {}
-        
+
+        # Build full 3x3 tensor for each atom
+        chemical_shift_tensors = {}
+
         for atom_label in self.ctx.atom_labels:
-            chemical_shifts[atom_label] = {}
-            
-            for direction in self.ctx.directions:
+            tensor = [[0.0, 0.0, 0.0],  # Row 0: σ_xx, σ_xy, σ_xz
+                      [0.0, 0.0, 0.0],  # Row 1: σ_yx, σ_yy, σ_yz  
+                      [0.0, 0.0, 0.0]]  # Row 2: σ_zx, σ_zy, σ_zz
+
+            for dir_idx, direction in enumerate(self.ctx.directions):
                 calc_label = f'{atom_label}_{direction}'
                 calc = self.ctx[calc_label]
-                
-                # Parse the output to get chemical shift value
-                # This depends on how qe-converse.x outputs are structured
-                # You may need to adapt this based on your actual output parser
+
                 try:
                     output_params = calc.outputs.output_parameters.get_dict()
-                    # Assuming the chemical shift is stored with key 'chemical_shift'
-                    # and it's a 3-component vector [xx, yy, zz]
-                    shift_value = output_params.get('chemical_shift', [0, 0, 0])
-                    
-                    # Get the diagonal component corresponding to this direction
-                    dir_idx = self.ctx.directions.index(direction)
-                    chemical_shifts[atom_label][direction] = shift_value[dir_idx]
-                    
+                    column = output_params.get('chemical_shift', [0, 0, 0])
+
+                    # column contains [σ_x?, σ_y?, σ_z?] where ? is the current direction
+                    for row_idx in range(3):
+                        tensor[row_idx][dir_idx] = column[row_idx]
+
                 except (AttributeError, KeyError) as e:
                     self.report(f'Failed to parse output for {calc_label}: {e}')
                     return self.exit_codes.ERROR_PARSING_FAILED
-        
-        # Store chemical shifts
-        self.out('chemical_shifts', orm.Dict(dict=chemical_shifts))
-        
+
+            chemical_shift_tensors[atom_label] = tensor
+
+        # Store full tensors
+        tensors_node = orm.Dict(dict=chemical_shift_tensors).store()
+        self.out('absolute_shift_tensor_ppm', tensors_node)
+
         # Compute isotropic shielding
-        isotropic = compute_isotropic_shielding(orm.Dict(dict=chemical_shifts))
-        self.out('isotropic_shielding', isotropic)
+        isotropic = compute_isotropic_shielding(tensors_node)
+        self.out('isotropic_shielding_ppm', isotropic)
     
     def finalize(self):
         """Finalize the workchain."""
         self.report('NMR converse workchain completed successfully')
         
         # Print summary
-        isotropic_dict = self.outputs.isotropic_shielding.get_dict()
+        isotropic_dict = self.node.outputs.isotropic_shielding_ppm.get_dict()
         self.report('Isotropic shielding values:')
         for atom_label, values in isotropic_dict.items():
-            self.report(f"  {atom_label}: {values['isotropic']:.3f} ppm")
+            self.report(f"  {atom_label}: {values['isotropic_shielding_ppm']:.3f} ppm")

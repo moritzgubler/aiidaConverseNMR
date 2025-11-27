@@ -125,7 +125,7 @@ def prepare_options():
     options = {
         'resources': {
             'num_machines': 1,
-            'num_mpiprocs_per_machine': 16,
+            'num_mpiprocs_per_machine': 8,
         },
         'max_wallclock_seconds': 3600 * 4,  # 2 hours
         'queue_name': 'your_queue_name',  # If applicable
@@ -162,7 +162,7 @@ def main():
     
     # 5. Define target atoms (0-indexed)
     # Based on your bash script: atoms 1, 3, 4, 5 (1-indexed) -> 0, 2, 3, 4 (0-indexed)
-    target_atoms = orm.List(list=[0, 1, 2, 3, 4, 5, 6, 7, 8])
+    target_atoms = orm.List(list=[2, 3])
     print(f"Will compute chemical shifts for atoms: {target_atoms.get_list()}")
     
     # 6. Prepare inputs for the workchain
@@ -178,7 +178,7 @@ def main():
         'pseudos': pseudos,
         'target_atoms': target_atoms,
         'options': options,
-        'kpoints_distance': orm.Float(0.15),
+        'kpoints_distance': orm.Float(0.5),
         'q_gipaw': orm.Float(0.01),
         'mixing_beta': orm.Float(0.5),
         'dudk_method': orm.Str('covariant'),
@@ -219,40 +219,38 @@ def retrieve_results(workchain_pk):
     print("RESULTS")
     print("="*60)
     
-    # Get chemical shifts
-    chemical_shifts = workchain.outputs.chemical_shifts.get_dict()
-    print("\nChemical Shift Tensor Components (ppm):")
-    print("-"*60)
-    for atom_label, shifts in chemical_shifts.items():
-        print(f"\n{atom_label}:")
-        print(f"  σ_xx = {shifts['x']:8.3f} ppm")
-        print(f"  σ_yy = {shifts['y']:8.3f} ppm")
-        print(f"  σ_zz = {shifts['z']:8.3f} ppm")
+    # Get results
+    results = workchain.outputs.isotropic_shielding.get_dict()
     
-    # Get isotropic shielding
-    isotropic = workchain.outputs.isotropic_shielding.get_dict()
-    print("\nIsotropic Shielding (ppm):")
+    print("\nChemical Shift Tensors and Isotropic Shielding:")
     print("-"*60)
-    for atom_label, values in isotropic.items():
-        print(f"{atom_label}: {values['isotropic']:8.3f} ppm (trace = {values['trace']:8.3f})")
+    for atom_label, data in results.items():
+        tensor = data['absolute_shift_tensor_ppm']
+        isotropic = data['isotropic_shielding_ppm']
+        
+        print(f"\n{atom_label}:")
+        print(f"  Isotropic shielding: {isotropic:8.3f} ppm")
+        print(f"  Tensor (ppm):")
+        print(f"    [{tensor[0][0]:8.3f}, {tensor[0][1]:8.3f}, {tensor[0][2]:8.3f}]")
+        print(f"    [{tensor[1][0]:8.3f}, {tensor[1][1]:8.3f}, {tensor[1][2]:8.3f}]")
+        print(f"    [{tensor[2][0]:8.3f}, {tensor[2][1]:8.3f}, {tensor[2][2]:8.3f}]")
     
     print("\n" + "="*60)
     
-    # Export data to file if needed
+    # Export data to file
     import json
     output_file = f'nmr_results_{workchain_pk}.json'
-    results = {
-        'chemical_shifts': chemical_shifts,
-        'isotropic_shielding': isotropic
-    }
     with open(output_file, 'w') as f:
         json.dump(results, f, indent=2)
     print(f"\nResults exported to: {output_file}")
 
-
 if __name__ == '__main__':
     # Submit the workchain
-    workchain = main()
+    import sys
+    if len(sys.argv) == 1:
+        workchain = main()
+    else:
+        retrieve_results(sys.argv[1])
     
     # To retrieve results later, use:
     # retrieve_results(workchain.pk)
