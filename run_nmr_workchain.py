@@ -125,10 +125,10 @@ def prepare_options():
     options = {
         'resources': {
             'num_machines': 1,
-            'num_mpiprocs_per_machine': 8,
+            'num_mpiprocs_per_machine': 16,
         },
-        'max_wallclock_seconds': 3600 * 4,  # 2 hours
-        'queue_name': 'your_queue_name',  # If applicable
+        'max_wallclock_seconds': 3600 * 4,  # 4 hours
+        'queue_name': 'daily',  # If applicable
     }
     
     return orm.Dict(dict=options)
@@ -162,7 +162,7 @@ def main():
     
     # 5. Define target atoms (0-indexed)
     # Based on your bash script: atoms 1, 3, 4, 5 (1-indexed) -> 0, 2, 3, 4 (0-indexed)
-    target_atoms = orm.List(list=[2, 3])
+    target_atoms = orm.List(list=[0, 1, 2, 3, 4, 5, 6, 7, 8])
     print(f"Will compute chemical shifts for atoms: {target_atoms.get_list()}")
     
     # 6. Prepare inputs for the workchain
@@ -220,13 +220,14 @@ def retrieve_results(workchain_pk):
     print("="*60)
     
     # Get results
-    results = workchain.outputs.isotropic_shielding.get_dict()
+    tensors = workchain.outputs.absolute_shift_tensor_ppm.get_dict()
+    isotropic_data = workchain.outputs.isotropic_shielding_ppm.get_dict()
     
     print("\nChemical Shift Tensors and Isotropic Shielding:")
     print("-"*60)
-    for atom_label, data in results.items():
-        tensor = data['absolute_shift_tensor_ppm']
-        isotropic = data['isotropic_shielding_ppm']
+    for atom_label in tensors.keys():
+        tensor = tensors[atom_label]
+        isotropic = isotropic_data[atom_label]['isotropic_shielding_ppm']
         
         print(f"\n{atom_label}:")
         print(f"  Isotropic shielding: {isotropic:8.3f} ppm")
@@ -239,22 +240,34 @@ def retrieve_results(workchain_pk):
     
     # Export data to file
     import json
+    combined_results = {
+        atom: {
+            'tensor_ppm': tensors[atom],
+            'isotropic_shielding_ppm': isotropic_data[atom]['isotropic_shielding_ppm']
+        }
+        for atom in tensors.keys()
+    }
     output_file = f'nmr_results_{workchain_pk}.json'
     with open(output_file, 'w') as f:
-        json.dump(results, f, indent=2)
+        json.dump(combined_results, f, indent=2)
     print(f"\nResults exported to: {output_file}")
 
 if __name__ == '__main__':
-    # Submit the workchain
-    import sys
-    if len(sys.argv) == 1:
-        workchain = main()
+    import argparse
+    
+    parser = argparse.ArgumentParser(
+        description='Run or retrieve results from NMR converse workflow'
+    )
+    parser.add_argument(
+        '--retrieve', '-r',
+        type=int,
+        metavar='PK',
+        help='Retrieve results from a completed workchain (provide PK (int))'
+    )
+    
+    args = parser.parse_args()
+    
+    if args.retrieve:
+        retrieve_results(args.retrieve)
     else:
-        retrieve_results(sys.argv[1])
-    
-    # To retrieve results later, use:
-    # retrieve_results(workchain.pk)
-    
-    # Or wait for completion (not recommended for long calculations)
-    # from aiida.engine import run
-    # results = run(NmrConverseWorkChain, **inputs)
+        workchain = main()
