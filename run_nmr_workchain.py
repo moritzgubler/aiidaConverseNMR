@@ -18,46 +18,22 @@ from aiida import orm, load_profile
 from aiida.engine import submit
 # from aiida_quantumespresso.data.pseudopotential import upload_pseudo_family
 import numpy as np
+from ase.io import read
 
 # Load AiiDA profile
 load_profile()
 
 
-def setup_codes():
-    """
-    Setup or retrieve AiiDA codes.
-    Modify these to match your setup.
-    """
-    pw_code = orm.load_code('qe-7.2@merlin')  # Your pw code
-    converse_code = orm.load_code('qe-converse@merlin')  # Your converse code
-    return pw_code, converse_code
-
-
-def create_structure():
-    """Load structure from EXTXYZ file"""
-    from ase.io import read
-    
-    ase_structure = read('t.extxyz')
-    structure = orm.StructureData(ase=ase_structure)
-    
-    return structure
-
-def get_pseudopotentials():
+def get_pseudopotentials(structure: orm.StructureData, pp_label: str):
     """Get custom GIPAW pseudopotentials."""
     from aiida.orm import QueryBuilder, Group
-    
-    # Load your pseudo family
-    pseudo_family = Group.collection.get(label='gipaw')  # Changed from 'gipwaw'
-    
-    # Get structure
-    structure = create_structure()
     
     # Get pseudos for each element in the structure
     pseudos = {}
     for kind in structure.get_kind_names():
         # Find the pseudo for this element
         qb = QueryBuilder()
-        qb.append(Group, filters={'label': 'gipaw'}, tag='group')  # Changed here too
+        qb.append(Group, filters={'label': pp_label}, tag='group')  # Changed here too
         qb.append(orm.UpfData, with_group='group', 
                   filters={'attributes.element': kind})
         results = qb.all()
@@ -80,14 +56,10 @@ def prepare_scf_parameters():
         'CONTROL': {
             'calculation': 'scf',
             'restart_mode': 'from_scratch',
-            # 'prefix': 'nmr',
-            # 'pseudo_dir': './pseudo/',
-            # 'outdir': './scratch/',
             'verbosity': 'high',
         },
         'SYSTEM': {
             'ecutwfc': 80.0,  # Adjust based on your pseudopotentials
-            # 'ecutrho': 70.0,
                 # 'occupations': 'smearing',
                 # 'smearing': 'gaussian',
                 # 'degauss': 0.01,
@@ -103,19 +75,16 @@ def prepare_scf_parameters():
     
     return orm.Dict(dict=parameters)
 
-
-def prepare_converse_parameters():
+def prepare_converse_parameters(mixing_beta = 0.5):
     """
     Prepare base parameters for converse calculations.
     The workchain will add atom-specific and direction-specific parameters.
     """
     parameters = {
-        'verbosity': 'high',
-        'diagonalization': 'david',
+        "mixing_beta": mixing_beta
     }
     
     return orm.Dict(dict=parameters)
-
 
 def prepare_options():
     """
@@ -140,29 +109,28 @@ def main():
     """
     print("Setting up NMR converse calculation...")
     
-    # 1. Get codes
-    pw_code, converse_code = setup_codes()
+    # 1. define codes
+    pw_code = orm.load_code('qe-7.2@merlin')  # pw code
+    converse_code = orm.load_code('qe-converse@merlin')  # converse code
     print(f"Using pw.x code: {pw_code.label}")
     print(f"Using qe-converse code: {converse_code.label}")
     
     # 2. Create structure
-    structure = create_structure()
+    ase_structure = read("quartz.extxyz")
+    structure = orm.StructureData(ase=ase_structure)
     print(f"Structure has {len(structure.sites)} atoms")
     
     # 3. Get pseudopotentials
-    pseudos = get_pseudopotentials()
-    print("Pseudopotentials dictionary type:")
-    print(type(pseudos))
+    pseudos = get_pseudopotentials(structure, 'gipaw')
     print("Pseudopotentials loaded")
     
     # 4. Prepare parameters
     scf_params = prepare_scf_parameters()
-    converse_params = prepare_converse_parameters()
+    converse_params = prepare_converse_parameters(mixing_beta=0.5)
     options = prepare_options()
     
     # 5. Define target atoms (0-indexed)
-    # Based on your bash script: atoms 1, 3, 4, 5 (1-indexed) -> 0, 2, 3, 4 (0-indexed)
-    target_atoms = orm.List(list=[0, 1, 2, 3, 4, 5, 6, 7, 8])
+    target_atoms = orm.List(list=[0, 1, 2, 3, 4, 5])
     print(f"Will compute chemical shifts for atoms: {target_atoms.get_list()}")
     
     # 6. Prepare inputs for the workchain
