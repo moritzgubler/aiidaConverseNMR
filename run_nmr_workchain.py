@@ -59,13 +59,12 @@ def prepare_scf_parameters():
             'verbosity': 'high',
         },
         'SYSTEM': {
-            'ecutwfc': 80.0,  # Adjust based on your pseudopotentials
-                # 'occupations': 'smearing',
-                # 'smearing': 'gaussian',
-                # 'degauss': 0.01,
+            'ecutwfc': 90.0,  # Adjust based on your pseudopotentials
+            'occupations': 'smearing', # CRITICAL: use smearing to compute some empty bands and set smearing with to 0 for insulators
+            'smearing': 'gaussian',
+            'degauss': 1e-8,
             'nosym': True,  # CRITICAL: Disable symmetry for NMR
             'noinv': True,  # CRITICAL: Disable inversion symmetry
-            'nbnd' : 30
         },
         'ELECTRONS': {
             'conv_thr': 1.0e-10,
@@ -96,7 +95,7 @@ def prepare_options():
             'num_machines': 1,
             'num_mpiprocs_per_machine': 16,
         },
-        'max_wallclock_seconds': 3600 * 4,  # 4 hours
+        'max_wallclock_seconds': 3600 * 8,  # 4 hours
         'queue_name': 'daily',  # If applicable
     }
     
@@ -118,6 +117,7 @@ def main():
     # 2. Create structure
     ase_structure = read("quartz.extxyz")
     structure = orm.StructureData(ase=ase_structure)
+    nat = len(structure.sites)
     print(f"Structure has {len(structure.sites)} atoms")
     
     # 3. Get pseudopotentials
@@ -130,7 +130,8 @@ def main():
     options = prepare_options()
     
     # 5. Define target atoms (0-indexed)
-    target_atoms = orm.List(list=[0, 1, 2, 3, 4, 5])
+    # compute shifts for all atoms
+    target_atoms = orm.List(list=list(range(nat)))
     print(f"Will compute chemical shifts for atoms: {target_atoms.get_list()}")
     
     # 6. Prepare inputs for the workchain
@@ -146,7 +147,7 @@ def main():
         'pseudos': pseudos,
         'target_atoms': target_atoms,
         'options': options,
-        'kpoints_distance': orm.Float(0.5),
+        'kpoints_distance': orm.Float(0.15),
         'q_gipaw': orm.Float(0.01),
         'mixing_beta': orm.Float(0.5),
         'dudk_method': orm.Str('covariant'),
