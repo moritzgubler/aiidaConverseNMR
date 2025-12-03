@@ -178,7 +178,6 @@ class NmrConverseWorkChain(WorkChain):
         from aiida.plugins import CalculationFactory
         QeConverseCalculation = CalculationFactory('qeconverse')
         
-        structure = self.inputs.structure
         base_params = self.inputs.converse_parameters.get_dict()
         
         # Get prefix from SCF parameters (usually 'aiida')
