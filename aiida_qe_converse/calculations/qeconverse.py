@@ -101,12 +101,12 @@ class QeConverseCalculation(CalcJob):
             self.metadata.options.output_filename,
         ]
     
-        # COPY parent folder instead of symlink (qe-converse writes to outdir)
-        calcinfo.remote_copy_list = []
+        # Symlink parent folder (SCF results)
+        calcinfo.remote_symlink_list = []
         if 'parent_folder' in self.inputs:
             parent_folder = self.inputs.parent_folder
             parent_folder_name = self.metadata.options.parent_folder_name
-            calcinfo.remote_copy_list.append((
+            calcinfo.remote_symlink_list.append((
                 parent_folder.computer.uuid,
                 os.path.join(parent_folder.get_remote_path(), parent_folder_name),
                 parent_folder_name
