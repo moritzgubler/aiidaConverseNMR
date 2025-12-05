@@ -106,7 +106,156 @@ class NmrConverseWorkChain(WorkChain):
                       message='One or more converse calculations failed')
         spec.exit_code(302, 'ERROR_PARSING_FAILED',
                       message='Failed to parse chemical shift values')
-    
+
+    @classmethod
+    def get_builder_from_protocol(
+        cls,
+        pw_code,
+        converse_code,
+        structure,
+        protocol='moderate',
+        pseudo_family='gipaw',
+        target_atoms=None,
+        overrides=None,
+        **kwargs
+    ):
+        """
+        Return a builder with inputs set according to the specified protocol.
+
+        Args:
+            pw_code: Code for pw.x (Quantum ESPRESSO)
+            converse_code: Code for qe-converse.x
+            structure: StructureData node
+            protocol: Protocol to use ('fast', 'moderate', 'precise')
+            pseudo_family: Label of the pseudopotential family to use
+            target_atoms: List of atom indices (0-based) to compute shifts for.
+                         If None, computes for all atoms.
+            overrides: Dict with override parameters for specific inputs
+            **kwargs: Additional inputs to override
+
+        Returns:
+            ProcessBuilder for NmrConverseWorkChain
+        """
+        from aiida.orm import QueryBuilder, Group
+
+        # Protocol definitions
+        protocols = {
+            'fast': {
+                'ecutwfc': 60.0,
+                'kpoints_distance': 0.5,
+                'conv_thr': 1.0e-10,
+                'mixing_beta': 0.5,
+                'q_gipaw': 0.01,
+                'num_machines': 1,
+                'num_mpiprocs_per_machine': 8,
+                'max_wallclock_seconds': 3600 * 2,
+            },
+            'moderate': {
+                'ecutwfc': 90.0,
+                'kpoints_distance': 0.25,
+                'conv_thr': 1.0e-11,
+                'mixing_beta': 0.5,
+                'q_gipaw': 0.01,
+                'num_machines': 1,
+                'num_mpiprocs_per_machine': 16,
+                'max_wallclock_seconds': 3600 * 8,
+            },
+            'precise': {
+                'ecutwfc': 120.0,
+                'kpoints_distance': 0.15,
+                'conv_thr': 1.0e-12,
+                'mixing_beta': 0.5,
+                'q_gipaw': 0.01,
+                'num_machines': 1,
+                'num_mpiprocs_per_machine': 32,
+                'max_wallclock_seconds': 3600 * 12,
+            }
+        }
+
+        if protocol not in protocols:
+            raise ValueError(f"Unknown protocol '{protocol}'. Choose from: {list(protocols.keys())}")
+
+        proto = protocols[protocol]
+
+        # Apply overrides if provided
+        if overrides:
+            proto.update(overrides)
+
+        # Get pseudopotentials
+        pseudos = {}
+        for kind in structure.get_kind_names():
+            qb = QueryBuilder()
+            qb.append(Group, filters={'label': pseudo_family}, tag='group')
+            qb.append(orm.UpfData, with_group='group',
+                      filters={'attributes.element': kind})
+            results = qb.all()
+
+            if results:
+                pseudos[kind] = results[0][0].pk
+            else:
+                raise ValueError(f"No pseudo found for element {kind} in family '{pseudo_family}'")
+
+        # Prepare SCF parameters
+        scf_parameters = {
+            'CONTROL': {
+                'calculation': 'scf',
+                'restart_mode': 'from_scratch',
+                'verbosity': 'high',
+            },
+            'SYSTEM': {
+                'ecutwfc': proto['ecutwfc'],
+                'occupations': 'smearing',
+                'smearing': 'gaussian',
+                'degauss': 1e-8,
+                'nosym': True,  # CRITICAL: Disable symmetry for NMR
+                'noinv': True,  # CRITICAL: Disable inversion symmetry
+            },
+            'ELECTRONS': {
+                'conv_thr': proto['conv_thr'],
+                'mixing_beta': proto['mixing_beta'],
+            },
+        }
+
+        # Prepare converse parameters
+        converse_parameters = {
+            'mixing_beta': proto['mixing_beta']
+        }
+
+        # Prepare computational options
+        options = {
+            'resources': {
+                'num_machines': proto['num_machines'],
+                'num_mpiprocs_per_machine': proto['num_mpiprocs_per_machine'],
+            },
+            'max_wallclock_seconds': proto['max_wallclock_seconds'],
+        }
+
+        # Add queue_name if provided in overrides or kwargs
+        queue_name = kwargs.get('queue_name') or (overrides or {}).get('queue_name')
+        if queue_name:
+            options['queue_name'] = queue_name
+
+        # Determine target atoms
+        if target_atoms is None:
+            target_atoms = list(range(len(structure.sites)))
+
+        # Build the inputs
+        builder = cls.get_builder()
+        builder.structure = structure
+        builder.pw_code = pw_code
+        builder.converse_code = converse_code
+        builder.scf_parameters = orm.Dict(dict=scf_parameters)
+        builder.converse_parameters = orm.Dict(dict=converse_parameters)
+        builder.pseudos = orm.Dict(dict=pseudos)
+        builder.target_atoms = orm.List(list=target_atoms)
+        builder.options = orm.Dict(dict=options)
+        builder.kpoints_distance = orm.Float(proto['kpoints_distance'])
+        builder.q_gipaw = orm.Float(proto['q_gipaw'])
+        builder.mixing_beta = orm.Float(proto['mixing_beta'])
+        builder.dudk_method = orm.Str(kwargs.get('dudk_method', 'covariant'))
+
+        return builder
+
     def setup(self):
         """Initialize the workchain."""
         self.report('Setting up NMR converse workchain')
@@ -206,6 +355,7 @@ class NmrConverseWorkChain(WorkChain):
                 
                 # Set lambda_so to zero (can be customized if needed)
                 params['lambda_so'] = [0.0]
+                params['delete_dudk_files'] = True
                 
                 # Create the input dictionary
                 inputs = {
