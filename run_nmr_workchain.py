@@ -29,7 +29,7 @@ from ase.io import read
 load_profile()
 
 
-def main():
+def main(inputfileName: str):
     """
     Main function to submit the NMR converse workchain.
 
@@ -44,7 +44,7 @@ def main():
     print(f"Using qe-converse code: {converse_code.label}")
 
     # 2. Create structure
-    ase_structure = read("quartz.extxyz")
+    ase_structure = read(inputfileName)
     structure = orm.StructureData(ase=ase_structure)
     nat = len(structure.sites)
     print(f"Structure has {len(structure.sites)} atoms")
@@ -270,9 +270,17 @@ if __name__ == '__main__':
         metavar='PK',
         help='Retrieve results from a completed workchain (provide PK (int))'
     )
+    parser.add_argument(
+        '--input', '-i',
+        type=str,
+        metavar='FILE',
+        help='Input structure file (.extxyz format)'
+    )
     args = parser.parse_args()
 
     if args.retrieve:
         retrieve_results(args.retrieve)
     else:
-        workchain = main()
+        if not args.input:
+            parser.error('--input/-i is required when not using --retrieve')
+        workchain = main(args.input)
