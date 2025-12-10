@@ -148,7 +148,7 @@ class NmrConverseWorkChain(WorkChain):
                 'q_gipaw': 0.01,
                 'num_machines': 1,
                 'num_mpiprocs_per_machine': 8,
-                'max_wallclock_seconds': 3600 * 2,
+                'max_wallclock_seconds': 3600 * 23,
             },
             'moderate': {
                 'ecutwfc': 90.0,
@@ -158,7 +158,7 @@ class NmrConverseWorkChain(WorkChain):
                 'q_gipaw': 0.01,
                 'num_machines': 1,
                 'num_mpiprocs_per_machine': 16,
-                'max_wallclock_seconds': 3600 * 8,
+                'max_wallclock_seconds': 3600 * 23,
             },
             'precise': {
                 'ecutwfc': 120.0,
@@ -168,7 +168,7 @@ class NmrConverseWorkChain(WorkChain):
                 'q_gipaw': 0.01,
                 'num_machines': 1,
                 'num_mpiprocs_per_machine': 32,
-                'max_wallclock_seconds': 3600 * 12,
+                'max_wallclock_seconds': 3600 * 23,
             }
         }
 
