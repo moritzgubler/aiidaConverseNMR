@@ -145,31 +145,34 @@ class NmrConverseWorkChain(WorkChain):
                 'ecutwfc': 60.0,
                 'kpoints_distance': 0.5,
                 'conv_thr': 1.0e-10,
-                'mixing_beta': 0.5,
+                'mixing_beta': 0.4,
                 'q_gipaw': 0.01,
                 'num_machines': 1,
                 'num_mpiprocs_per_machine': 8,
                 'max_wallclock_seconds': 3600 * 23,
+                'max_memory_kb': 16000000,
             },
             'moderate': {
                 'ecutwfc': 90.0,
                 'kpoints_distance': 0.25,
-                'conv_thr': 1.0e-11,
-                'mixing_beta': 0.5,
+                'conv_thr': 1.0e-10,
+                'mixing_beta': 0.4,
                 'q_gipaw': 0.01,
                 'num_machines': 1,
                 'num_mpiprocs_per_machine': 16,
                 'max_wallclock_seconds': 3600 * 23,
+                'max_memory_kb': 32000000,
             },
             'precise': {
                 'ecutwfc': 120.0,
                 'kpoints_distance': 0.15,
-                'conv_thr': 1.0e-12,
-                'mixing_beta': 0.5,
+                'conv_thr': 1.0e-1,
+                'mixing_beta': 0.4,
                 'q_gipaw': 0.01,
                 'num_machines': 1,
                 'num_mpiprocs_per_machine': 32,
                 'max_wallclock_seconds': 3600 * 23,
+                'max_memory_kb': 64000000,
             }
         }
 
@@ -233,6 +236,7 @@ class NmrConverseWorkChain(WorkChain):
                 'num_mpiprocs_per_machine': proto['num_mpiprocs_per_machine'],
             },
             'max_wallclock_seconds': proto['max_wallclock_seconds'],
+            'max_memory_kb': proto['max_memory_kb'],
         }
 
         # Add queue_name if provided in overrides or kwargs
