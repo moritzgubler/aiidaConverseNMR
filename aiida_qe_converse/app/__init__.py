@@ -27,10 +27,10 @@ property = {
         "panel": NMRConfigurationSettingPanel,
         "model": NMRConfigurationSettingsModel,
     },
-    # "resources": {
-    #     "panel": NMRResourcesSettingsPanel,
-    #     "model": NMRResourceSettingsModel,
-    # },
+    "resources": {
+        "panel": NMRResourcesSettingsPanel,
+        "model": NMRResourceSettingsModel,
+    },
     "result": {
         "panel": NMRResultsPanel,
         "model": NMRResultsModel,

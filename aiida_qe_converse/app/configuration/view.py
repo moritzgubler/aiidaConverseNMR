@@ -117,7 +117,7 @@ class NMRConfigurationSettingPanel(ConfigurationSettingsPanel[NMRConfigurationSe
 
             # Create row using HBox with overflow hidden
             index_widget = ipw.HTML(
-                f"<div style='width: 80px; text-align: center; padding: 8px;'>{idx}</div>",
+                f"<div style='width: 80px; text-align: center; padding: 8px;'>{idx+1}</div>",
                 layout=ipw.Layout(width="80px", flex="0 0 auto")
             )
 
