@@ -119,7 +119,7 @@ class NmrConverseWorkChain(WorkChain):
         pw_code,
         converse_code,
         structure,
-        protocol='moderate',
+        protocol='balanced',
         pseudo_family='gipaw',
         target_atoms=None,
         electronic_type=None,
@@ -133,7 +133,7 @@ class NmrConverseWorkChain(WorkChain):
             pw_code: Code for pw.x (Quantum ESPRESSO)
             converse_code: Code for qe-converse.x
             structure: StructureData node
-            protocol: Protocol to use ('fast', 'moderate', 'precise')
+            protocol: Protocol to use ('fast', 'balanced', 'stringent')
             pseudo_family: Label of the pseudopotential family to use
             target_atoms: List of atom indices (0-based) to compute shifts for.
                          If None, computes for all atoms.
@@ -160,7 +160,7 @@ class NmrConverseWorkChain(WorkChain):
                 'max_wallclock_seconds': 3600 * 23,
                 'max_memory_kb': 16000000,
             },
-            'moderate': {
+            'balanced': {
                 'ecutwfc': 60.0,
                 'kpoints_distance': 0.25,
                 'conv_thr': 1.0e-9,
@@ -171,7 +171,7 @@ class NmrConverseWorkChain(WorkChain):
                 'max_wallclock_seconds': 3600 * 23,
                 'max_memory_kb': 32000000,
             },
-            'precise': {
+            'stringent': {
                 'ecutwfc': 80.0,
                 'kpoints_distance': 0.15,
                 'conv_thr': 1.0e-9,
