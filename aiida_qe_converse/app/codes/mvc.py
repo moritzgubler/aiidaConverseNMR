@@ -6,50 +6,30 @@ from aiidalab_qe.common.code.model import PwCodeModel, CodeModel
 
 
 class NMRResourceSettingsModel(PluginResourceSettingsModel):
-    """Model for NMR Converse resource settings."""
+    """Resource settings for NMR Converse calculations."""
 
+    title = "NMR Resources"
     identifier = "nmr_converse"
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
 
-        # Code for pw.x (SCF calculation)
-        self.add_code_model(
-            "pw_nmr",
-            PwCodeModel(
-                name="pw_nmr",
-                description="pw.x for NMR SCF calculation",
-                default_calc_job_plugin="quantumespresso.pw",
-            ),
+        self.add_models(
+            {
+                "pw_nmr": PwCodeModel(
+                    description="pw.x for NMR SCF calculation",
+                    default_calc_job_plugin="quantumespresso.pw",
+                ),
+                "qeconverse": CodeModel(
+                    name="qe-converse.x",
+                    description="qe-converse.x for chemical shift calculation",
+                    default_calc_job_plugin="qeconverse",
+                ),
+            },
         )
-
-        # Code for qe-converse.x (chemical shift calculation)
-        self.add_code_model(
-            "qeconverse",
-            CodeModel(
-                name="qeconverse",
-                description="qe-converse.x for chemical shift calculation",
-                default_calc_job_plugin="qeconverse.qeconverse",
-            ),
-        )
-
-    def get_model_state(self):
-        """Get the current state of the model."""
-        return {}
-
-    def set_model_state(self, state):
-        """Set the model state from a dictionary."""
-        pass
 
 
 class NMRResourcesSettingsPanel(PluginResourceSettingsPanel[NMRResourceSettingsModel]):
-    """Panel for NMR Converse resource settings."""
+    """Panel for the resource settings for NMR Converse calculations."""
 
     title = "NMR"
-
-    def __init__(self, model: NMRResourceSettingsModel, **kwargs):
-        super().__init__(model, **kwargs)
-
-    def render(self):
-        """Render the resource settings panel."""
-        pass

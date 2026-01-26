@@ -17,19 +17,19 @@ class NMRConfigurationSettingsModel(ConfigurationSettingsModel, HasInputStructur
         "input_structure",
     ]
 
-    # Protocol settings
-    protocol = Unicode("moderate")
+    # # Protocol settings
+    # protocol = Unicode("moderate")
 
-    # Calculation flags
-    compute_nmr = Bool(True)
+    # # Calculation flags
+    # compute_nmr = Bool(True)
 
-    # NMR-specific parameters
-    kpoints_distance = Float(0.25)
-    ecutwfc = Float(90.0)
-    conv_thr = Float(1.0e-10)
-    mixing_beta = Float(0.4)
-    q_gipaw = Float(0.01)
-    dudk_method = Unicode("covariant")
+    # # NMR-specific parameters
+    # kpoints_distance = Float(0.25)
+    # ecutwfc = Float(90.0)
+    # conv_thr = Float(1.0e-10)
+    # mixing_beta = Float(0.4)
+    # q_gipaw = Float(0.01)
+    # dudk_method = Unicode("covariant")
 
     # Target atoms for NMR calculation
     # List of atom indices (0-based) for which to compute chemical shifts
@@ -43,9 +43,9 @@ class NMRConfigurationSettingsModel(ConfigurationSettingsModel, HasInputStructur
     # Format: [(index, element, kind_name), ...]
     atom_info = List([])
 
-    # Symmetry settings (must be disabled for NMR)
-    nosym = Bool(True)
-    noinv = Bool(True)
+    # # Symmetry settings (must be disabled for NMR)
+    # nosym = Bool(True)
+    # noinv = Bool(True)
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -89,41 +89,26 @@ class NMRConfigurationSettingsModel(ConfigurationSettingsModel, HasInputStructur
     def get_model_state(self):
         """Get the current state of the model."""
         return {
-            "protocol": self.protocol,
-            "compute_nmr": self.compute_nmr,
-            "kpoints_distance": self.kpoints_distance,
-            "ecutwfc": self.ecutwfc,
-            "conv_thr": self.conv_thr,
-            "mixing_beta": self.mixing_beta,
-            "q_gipaw": self.q_gipaw,
-            "dudk_method": self.dudk_method,
-            "atom_selection": self.atom_selection,
-            "target_atoms": self.target_atoms,
+            k: getattr(self, k) for k, v in self.traits().items()
+            if k != "input_structure"
         }
 
-    def set_model_state(self, state):
+    def set_model_state(self, parameters):
         """Set the model state from a dictionary."""
-        self.protocol = state.get("protocol", "moderate")
-        self.compute_nmr = state.get("compute_nmr", True)
-        self.kpoints_distance = state.get("kpoints_distance", 0.25)
-        self.ecutwfc = state.get("ecutwfc", 90.0)
-        self.conv_thr = state.get("conv_thr", 1.0e-10)
-        self.mixing_beta = state.get("mixing_beta", 0.4)
-        self.q_gipaw = state.get("q_gipaw", 0.01)
-        self.dudk_method = state.get("dudk_method", "covariant")
-        self.atom_selection = state.get("atom_selection", {})
-        self.target_atoms = state.get("target_atoms", [])
+        for key, value in parameters.items():
+            if key in self.traits():
+                self.set_trait(key, value)
 
     def reset(self):
         """Reset model to default values."""
-        self.protocol = "moderate"
-        self.compute_nmr = True
-        self.kpoints_distance = 0.25
-        self.ecutwfc = 90.0
-        self.conv_thr = 1.0e-10
-        self.mixing_beta = 0.4
-        self.q_gipaw = 0.01
-        self.dudk_method = "covariant"
+        # self.protocol = "moderate"
+        # self.compute_nmr = True
+        # self.kpoints_distance = 0.25
+        # self.ecutwfc = 90.0
+        # self.conv_thr = 1.0e-10
+        # self.mixing_beta = 0.4
+        # self.q_gipaw = 0.01
+        # self.dudk_method = "covariant"
         # Reselect all atoms
         if self.input_structure is not None:
             self.atom_selection = {idx: True for idx in range(len(self.input_structure.sites))}
