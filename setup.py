@@ -23,5 +23,12 @@ setup(
         'aiida.parsers': [
             'qeconverse = aiida_qe_converse.parsers.qeconverse:QeConverseParser',
         ],
+        'aiida.workflows': [
+            'qeconverse.nmr_converse = aiida_qe_converse.workflows.nmr_converse_workchain:NmrConverseWorkChain',
+            'qeconverse.qeconverse_base = aiida_qe_converse.workflows.qeconverse_base:QeConverseBaseWorkChain',
+        ],
+        'aiidalab_qe.properties': [
+            "qeconverse = aiida_qe_converse.app:property",
+        ]
     },
 )
