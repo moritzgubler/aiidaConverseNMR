@@ -12,6 +12,7 @@ Author: Generated for AiiDA workflow
 from aiida import orm
 from aiida.engine import WorkChain, ToContext, calcfunction
 from aiida_quantumespresso.workflows.pw.base import PwBaseWorkChain
+from .qeconverse_base import QeConverseBaseWorkChain
 import numpy as np
 
 
@@ -144,31 +145,34 @@ class NmrConverseWorkChain(WorkChain):
                 'ecutwfc': 60.0,
                 'kpoints_distance': 0.5,
                 'conv_thr': 1.0e-10,
-                'mixing_beta': 0.5,
+                'mixing_beta': 0.4,
                 'q_gipaw': 0.01,
                 'num_machines': 1,
                 'num_mpiprocs_per_machine': 8,
                 'max_wallclock_seconds': 3600 * 23,
+                'max_memory_kb': 16000000,
             },
             'moderate': {
                 'ecutwfc': 90.0,
                 'kpoints_distance': 0.25,
-                'conv_thr': 1.0e-11,
-                'mixing_beta': 0.5,
+                'conv_thr': 1.0e-10,
+                'mixing_beta': 0.4,
                 'q_gipaw': 0.01,
                 'num_machines': 1,
                 'num_mpiprocs_per_machine': 16,
                 'max_wallclock_seconds': 3600 * 23,
+                'max_memory_kb': 32000000,
             },
             'precise': {
                 'ecutwfc': 120.0,
                 'kpoints_distance': 0.15,
-                'conv_thr': 1.0e-12,
-                'mixing_beta': 0.5,
+                'conv_thr': 1.0e-1,
+                'mixing_beta': 0.4,
                 'q_gipaw': 0.01,
                 'num_machines': 1,
                 'num_mpiprocs_per_machine': 32,
                 'max_wallclock_seconds': 3600 * 23,
+                'max_memory_kb': 64000000,
             }
         }
 
@@ -186,8 +190,12 @@ class NmrConverseWorkChain(WorkChain):
         for kind in structure.get_kind_names():
             qb = QueryBuilder()
             qb.append(Group, filters={'label': pseudo_family}, tag='group')
-            qb.append(orm.UpfData, with_group='group',
-                      filters={'attributes.element': kind})
+            # qb.append(orm.UpfData, with_group='group',
+            #           filters={'attributes.element': kind})
+            from aiida_pseudo.data.pseudo.upf import UpfData
+            qb.append(UpfData, with_group='group',
+                    filters={'attributes.element': kind})
+
             results = qb.all()
 
             if results:
@@ -228,6 +236,7 @@ class NmrConverseWorkChain(WorkChain):
                 'num_mpiprocs_per_machine': proto['num_mpiprocs_per_machine'],
             },
             'max_wallclock_seconds': proto['max_wallclock_seconds'],
+            'max_memory_kb': proto['max_memory_kb'],
         }
 
         # Add queue_name if provided in overrides or kwargs
@@ -324,9 +333,6 @@ class NmrConverseWorkChain(WorkChain):
         """Submit all converse calculations for each atom and direction."""
         self.report('Submitting converse calculations')
         
-        from aiida.plugins import CalculationFactory
-        QeConverseCalculation = CalculationFactory('qeconverse')
-        
         base_params = self.inputs.converse_parameters.get_dict()
         
         # Get prefix from SCF parameters (usually 'aiida')
@@ -357,21 +363,23 @@ class NmrConverseWorkChain(WorkChain):
                 params['lambda_so'] = [0.0]
                 params['delete_dudk_files'] = True
                 
-                # Create the input dictionary
+                # Create the input dictionary for QeConverseBaseWorkChain
                 inputs = {
-                    'code': self.inputs.converse_code,
-                    'parameters': orm.Dict(dict={'input_qeconverse': params}),
-                    'parent_folder': self.ctx.scf_remote_folder,
-                    'metadata': {
-                        'options': self.inputs.options.get_dict(),
-                        'label': f'converse_{atom_label}_{direction}',
-                        'description': f'Converse calculation for atom {atom_label} in {direction} direction'
+                    'qeconverse': {
+                        'code': self.inputs.converse_code,
+                        'parameters': orm.Dict(dict={'input_qeconverse': params}),
+                        'parent_folder': self.ctx.scf_remote_folder,
+                        'metadata': {
+                            'options': self.inputs.options.get_dict(),
+                            'label': f'converse_{atom_label}_{direction}',
+                            'description': f'Converse calculation for atom {atom_label} in {direction} direction'
+                        }
                     }
                 }
                 
-                # Submit calculation using the proper CalcJob
+                # Submit calculation using QeConverseBaseWorkChain for error handling
                 calc_label = f'{atom_label}_{direction}'
-                running = self.submit(QeConverseCalculation, **inputs)
+                running = self.submit(QeConverseBaseWorkChain, **inputs)
                 converse_calcs[calc_label] = running
                 
                 self.report(f'Submitted converse calculation for {atom_label} ({direction}) <{running.pk}>')
