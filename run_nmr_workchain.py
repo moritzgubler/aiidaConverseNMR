@@ -29,13 +29,17 @@ from ase.io import read
 load_profile()
 
 
-def main(inputfileName: str, protocol: str = 'moderate'):
+def main(inputfileName: str, protocol: str = 'moderate', pseudo_family='gipaw_PBEsol'):
     """
     Main function to submit the NMR converse workchain.
 
     This demonstrates the new get_builder_from_protocol method.
     """
     print("Setting up NMR converse calculation...")
+
+    allowed_pseudofamilies =["gipaw_PBE", "gipaw_PBEsol"]
+    if pseudo_family not in allowed_pseudofamilies:
+        raise ValueError("Pseudofamily not allowed. Given pseudo_family: " + pseudo_family)
 
     # 1. Define codes
     pw_code = orm.load_code('qe-7.2@merlin')
@@ -57,7 +61,7 @@ def main(inputfileName: str, protocol: str = 'moderate'):
         converse_code=converse_code,
         structure=structure,
         protocol=protocol,  # Options: 'fast', 'moderate', 'precise'
-        pseudo_family='gipaw_pbesol',
+        pseudo_family=pseudo_family,
         target_atoms=None,  # None = all atoms, or provide list like [0, 1, 2]
         queue_name='daily',  # Optional: specify queue name
     )
