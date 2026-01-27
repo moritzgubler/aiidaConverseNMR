@@ -12,6 +12,7 @@ Author: Generated for AiiDA workflow
 from aiida import orm
 from aiida.engine import WorkChain, ToContext, calcfunction
 from aiida_quantumespresso.workflows.pw.base import PwBaseWorkChain
+from aiida_quantumespresso.common.types import ElectronicType
 from .qeconverse_base import QeConverseBaseWorkChain
 import numpy as np
 
@@ -82,6 +83,8 @@ class NmrConverseWorkChain(WorkChain):
                    help='dudk method (covariant or kdotp)')
         spec.input('dudk_in_memory', valid_type=orm.Bool, required=False, default=lambda: orm.Bool(True),
                    help='Whether to keep du/dk in memory (default: True)')
+        spec.input('electronic_type', valid_type=orm.Str, required=False, default=lambda: orm.Str('METAL'),
+                   help='Electronic type: METAL, INSULATOR, or UNKNOWN (default: METAL)')
 
         # Outline
         spec.outline(
@@ -119,6 +122,7 @@ class NmrConverseWorkChain(WorkChain):
         protocol='moderate',
         pseudo_family='gipaw',
         target_atoms=None,
+        electronic_type=None,
         overrides=None,
         **kwargs
     ):
@@ -133,6 +137,8 @@ class NmrConverseWorkChain(WorkChain):
             pseudo_family: Label of the pseudopotential family to use
             target_atoms: List of atom indices (0-based) to compute shifts for.
                          If None, computes for all atoms.
+            electronic_type: ElectronicType enum (METAL, INSULATOR, or UNKNOWN).
+                            Defaults to METAL if not specified.
             overrides: Dict with override parameters for specific inputs
             **kwargs: Additional inputs to override
 
@@ -146,8 +152,8 @@ class NmrConverseWorkChain(WorkChain):
             'fast': {
                 'ecutwfc': 40.0,
                 'kpoints_distance': 0.5,
-                'conv_thr': 1.0e-10,
-                'mixing_beta': 0.4,
+                'conv_thr': 1.0e-8,
+                'mixing_beta': 0.2,
                 'q_gipaw': 0.01,
                 'num_machines': 1,
                 'num_mpiprocs_per_machine': 8,
@@ -157,8 +163,8 @@ class NmrConverseWorkChain(WorkChain):
             'moderate': {
                 'ecutwfc': 60.0,
                 'kpoints_distance': 0.25,
-                'conv_thr': 1.0e-10,
-                'mixing_beta': 0.4,
+                'conv_thr': 1.0e-9,
+                'mixing_beta': 0.2,
                 'q_gipaw': 0.01,
                 'num_machines': 1,
                 'num_mpiprocs_per_machine': 16,
@@ -168,8 +174,8 @@ class NmrConverseWorkChain(WorkChain):
             'precise': {
                 'ecutwfc': 80.0,
                 'kpoints_distance': 0.15,
-                'conv_thr': 1.0e-1,
-                'mixing_beta': 0.4,
+                'conv_thr': 1.0e-9,
+                'mixing_beta': 0.2,
                 'q_gipaw': 0.01,
                 'num_machines': 1,
                 'num_mpiprocs_per_machine': 32,
@@ -205,6 +211,18 @@ class NmrConverseWorkChain(WorkChain):
             else:
                 raise ValueError(f"No pseudo found for element {kind} in family '{pseudo_family}'")
 
+        # Handle electronic type - default to METAL if not specified
+        if electronic_type is None:
+            electronic_type = ElectronicType.METAL
+        elif isinstance(electronic_type, str):
+            electronic_type = ElectronicType(electronic_type)
+
+        # Set degauss based on electronic type
+        if electronic_type == ElectronicType.INSULATOR:
+            degauss = 1e-8
+        else:  # METAL or UNKNOWN
+            degauss = 1e-2
+
         # Prepare SCF parameters
         scf_parameters = {
             'CONTROL': {
@@ -216,7 +234,7 @@ class NmrConverseWorkChain(WorkChain):
                 'ecutwfc': proto['ecutwfc'],
                 'occupations': 'smearing',
                 'smearing': 'gaussian',
-                'degauss': 1e-8,
+                'degauss': degauss,
                 'nosym': True,  # CRITICAL: Disable symmetry for NMR
                 'noinv': True,  # CRITICAL: Disable inversion symmetry
             },
@@ -265,6 +283,7 @@ class NmrConverseWorkChain(WorkChain):
         builder.mixing_beta = orm.Float(proto['mixing_beta'])
         builder.dudk_method = orm.Str(kwargs.get('dudk_method', 'covariant'))
         builder.dudk_in_memory = orm.Bool(kwargs.get('dudk_in_memory', True))
+        builder.electronic_type = orm.Str(electronic_type.value)
 
         return builder
 

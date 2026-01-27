@@ -29,7 +29,7 @@ from ase.io import read
 load_profile()
 
 
-def main(inputfileName: str, protocol: str = 'moderate', pseudo_family='gipaw_PBEsol'):
+def main(inputfileName: str, protocol: str = 'moderate', pseudo_family='gipaw_PBE'):
     """
     Main function to submit the NMR converse workchain.
 
@@ -287,6 +287,13 @@ if __name__ == '__main__':
         default='moderate',
         help="Protocol for parameter selection (default: 'moderate')"
     )
+    parser.add_argument(
+        '--pseudo-family', '-f',
+        type=str,
+        choices=['gipaw_PBE', 'gipaw_PBEsol'],
+        default='gipaw_PBE',
+        help="Pseudopotential family (default: 'gipaw_PBE')"
+    )
     args = parser.parse_args()
 
     if args.retrieve:
@@ -294,4 +301,4 @@ if __name__ == '__main__':
     else:
         if not args.input:
             parser.error('--input/-i is required when not using --retrieve')
-        workchain = main(args.input, args.protocol)
+        workchain = main(args.input, args.protocol, args.pseudo_family)
