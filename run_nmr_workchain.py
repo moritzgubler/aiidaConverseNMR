@@ -29,7 +29,7 @@ from ase.io import read
 load_profile()
 
 
-def main(inputfileName: str):
+def main(inputfileName: str, protocol: str = 'moderate'):
     """
     Main function to submit the NMR converse workchain.
 
@@ -56,8 +56,8 @@ def main(inputfileName: str):
         pw_code=pw_code,
         converse_code=converse_code,
         structure=structure,
-        protocol='moderate',  # Options: 'fast', 'moderate', 'precise'
-        pseudo_family='gipaw',
+        protocol=protocol,  # Options: 'fast', 'moderate', 'precise'
+        pseudo_family='gipaw_pbesol',
         target_atoms=None,  # None = all atoms, or provide list like [0, 1, 2]
         queue_name='daily',  # Optional: specify queue name
     )
@@ -276,6 +276,13 @@ if __name__ == '__main__':
         metavar='FILE',
         help='Input structure file (.extxyz format)'
     )
+    parser.add_argument(
+        '--protocol', '-p',
+        type=str,
+        choices=['fast', 'moderate', 'precise'],
+        default='moderate',
+        help="Protocol for parameter selection (default: 'moderate')"
+    )
     args = parser.parse_args()
 
     if args.retrieve:
@@ -283,4 +290,4 @@ if __name__ == '__main__':
     else:
         if not args.input:
             parser.error('--input/-i is required when not using --retrieve')
-        workchain = main(args.input)
+        workchain = main(args.input, args.protocol)

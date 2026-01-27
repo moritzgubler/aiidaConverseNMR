@@ -80,7 +80,9 @@ class NmrConverseWorkChain(WorkChain):
                    help='Mixing beta parameter for converse')
         spec.input('dudk_method', valid_type=orm.Str, required=False, default=lambda: orm.Str('covariant'),
                    help='dudk method (covariant or kdotp)')
-        
+        spec.input('dudk_in_memory', valid_type=orm.Bool, required=False, default=lambda: orm.Bool(True),
+                   help='Whether to keep du/dk in memory (default: True)')
+
         # Outline
         spec.outline(
             cls.setup,
@@ -262,6 +264,7 @@ class NmrConverseWorkChain(WorkChain):
         builder.q_gipaw = orm.Float(proto['q_gipaw'])
         builder.mixing_beta = orm.Float(proto['mixing_beta'])
         builder.dudk_method = orm.Str(kwargs.get('dudk_method', 'covariant'))
+        builder.dudk_in_memory = orm.Bool(kwargs.get('dudk_in_memory', True))
 
         return builder
 
@@ -350,6 +353,7 @@ class NmrConverseWorkChain(WorkChain):
                 params['outdir'] = './out/'
                 params['q_gipaw'] = self.inputs.q_gipaw.value
                 params['dudk_method'] = self.inputs.dudk_method.value
+                params['dudk_in_memory'] = self.inputs.dudk_in_memory.value
                 params['mixing_beta'] = self.inputs.mixing_beta.value
                 params['verbosity'] = 'high'
                 params['diagonalization'] = 'david'
@@ -415,7 +419,7 @@ class NmrConverseWorkChain(WorkChain):
 
         for atom_label in self.ctx.atom_labels:
             tensor = [[0.0, 0.0, 0.0],  # Row 0: σ_xx, σ_xy, σ_xz
-                      [0.0, 0.0, 0.0],  # Row 1: σ_yx, σ_yy, σ_yz  
+                      [0.0, 0.0, 0.0],  # Row 1: σ_yx, σ_yy, σ_yz
                       [0.0, 0.0, 0.0]]  # Row 2: σ_zx, σ_zy, σ_zz
 
             for dir_idx, direction in enumerate(self.ctx.directions):
@@ -424,6 +428,15 @@ class NmrConverseWorkChain(WorkChain):
 
                 try:
                     output_params = calc.outputs.output_parameters.get_dict()
+
+                    # Check if the calculation converged and chemical shift was set
+                    converged = output_params.get('converged', False)
+                    if not converged:
+                        warnings = output_params.get('warnings', [])
+                        self.report(f'Chemical shift parsing failed for {calc_label}. Converged: {converged}')
+                        self.report(f'Warnings: {warnings}')
+                        return self.exit_codes.ERROR_PARSING_FAILED
+
                     column = output_params.get('chemical_shift', [0, 0, 0])
 
                     # column contains [σ_x?, σ_y?, σ_z?] where ? is the current direction
