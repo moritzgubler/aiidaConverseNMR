@@ -5,6 +5,7 @@ Parser for qe-converse.x output files.
 from aiida import orm
 from aiida.parsers import Parser
 from aiida.common import exceptions
+import numpy as np
 
 
 class QeConverseParser(Parser):
@@ -64,10 +65,12 @@ class QeConverseParser(Parser):
             Dictionary with parsed values
         """
         result = {
-            'chemical_shift': [0.0, 0.0, 0.0],
+            'chemical_shift': [np.nan, np.nan, np.nan],
             'converged': False,
             'warnings': []
         }
+
+        chemical_shift_set = False
         
         lines = output_text.split('\n')
         
@@ -90,6 +93,8 @@ class QeConverseParser(Parser):
                     if len(numbers) >= 3:
                         # Take the last 3 numbers
                         result['chemical_shift'] = numbers[-3:]
+                        chemical_shift_set = True
+                        result['converged'] = True
                 except (ValueError, IndexError) as e:
                     result['warnings'].append(f'Could not parse chemical shift: {e}')
             
@@ -116,8 +121,8 @@ class QeConverseParser(Parser):
                 if indicator in line.lower() and 'convergence' not in line.lower():
                     result['warnings'].append(f'Possible error in line {i}: {line.strip()}')
         
-        # Additional validation
-        if result['chemical_shift'] == [0.0, 0.0, 0.0]:
-            result['warnings'].append('All chemical shift values are zero')
+        if not chemical_shift_set:
+            result['converged'] = False
+            result["warnings"].append("Chemical shift has not been set.!!!")
         
         return result
