@@ -144,7 +144,7 @@ class NmrConverseWorkChain(WorkChain):
         # Protocol definitions
         protocols = {
             'fast': {
-                'ecutwfc': 60.0,
+                'ecutwfc': 40.0,
                 'kpoints_distance': 0.5,
                 'conv_thr': 1.0e-10,
                 'mixing_beta': 0.4,
@@ -155,7 +155,7 @@ class NmrConverseWorkChain(WorkChain):
                 'max_memory_kb': 16000000,
             },
             'moderate': {
-                'ecutwfc': 90.0,
+                'ecutwfc': 60.0,
                 'kpoints_distance': 0.25,
                 'conv_thr': 1.0e-10,
                 'mixing_beta': 0.4,
@@ -166,7 +166,7 @@ class NmrConverseWorkChain(WorkChain):
                 'max_memory_kb': 32000000,
             },
             'precise': {
-                'ecutwfc': 120.0,
+                'ecutwfc': 80.0,
                 'kpoints_distance': 0.15,
                 'conv_thr': 1.0e-1,
                 'mixing_beta': 0.4,
