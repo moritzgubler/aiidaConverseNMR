@@ -4,7 +4,7 @@ Results panel for NMR Converse plugin.
 import ipywidgets as ipw
 import numpy as np
 from aiidalab_qe.common.panel import ResultsPanel
-from aiidalab_qe.common.widgets import LoadingWidget, TableWidget
+from aiidalab_qe.common.widgets import TableWidget
 from aiidalab_widgets_base.viewers import StructureDataViewer
 from .model import NMRResultsModel
 
@@ -17,22 +17,15 @@ class NMRResultsPanel(ResultsPanel[NMRResultsModel]):
 
     def __init__(self, model: NMRResultsModel, **kwargs):
         super().__init__(model, **kwargs)
-        self.rendered = False
 
     def _render(self):
         """Render the results panel."""
-        if self.rendered:
-            return
-
-        # Show loading widget initially
-        self.children = [LoadingWidget("Loading NMR results")]
-
-        # Update the model with workchain data
-        self._model.update()
+        # Fetch results from workchain
+        self._model.fetch_results()
 
         # Check if we have results to display
         if not self._model.isotropic_shielding:
-            self.children = [
+            self.results_container.children = [
                 ipw.HTML(
                     "<p style='color: orange;'>No NMR results found. "
                     "The workchain may not have completed successfully.</p>"
@@ -80,8 +73,7 @@ class NMRResultsPanel(ResultsPanel[NMRResultsModel]):
         download_button.on_click(self._download_results)
         widgets.append(download_button)
 
-        self.children = widgets
-        self.rendered = True
+        self.results_container.children = widgets
 
     def _render_isotropic_shielding_table(self):
         """Render table of isotropic shielding values."""
