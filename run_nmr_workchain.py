@@ -2,7 +2,7 @@
 Example script for running the NMR converse WorkChain.
 
 This script demonstrates the recommended get_builder_from_protocol method,
-which automatically sets up all parameters based on a protocol ('fast', 'moderate', 'precise').
+which automatically sets up all parameters based on a protocol ('fast', 'balanced', 'stringent').
 
 This script shows how to:
 1. Set up the necessary codes in AiiDA
@@ -29,7 +29,7 @@ from ase.io import read
 load_profile()
 
 
-def main(inputfileName: str, protocol: str = 'moderate', pseudo_family='gipaw_PBE'):
+def main(inputfileName: str, protocol: str = 'balanced', pseudo_family='gipaw_PBE'):
     """
     Main function to submit the NMR converse workchain.
 
