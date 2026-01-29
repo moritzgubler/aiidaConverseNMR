@@ -2,9 +2,8 @@
 Results model for NMR Converse plugin.
 """
 from aiidalab_qe.common.panel import ResultsModel
-from traitlets import List, Dict, Instance, observe
+from traitlets import List, Dict, Instance
 from aiida import orm
-import numpy as np
 
 
 class NMRResultsModel(ResultsModel):
@@ -71,7 +70,7 @@ class NMRResultsModel(ResultsModel):
 
     def _generate_table_data(self):
         """Generate table data for display."""
-        if not self.isotropic_shielding or not self.chemical_shift_tensors:
+        if not self.isotropic_shielding:
             self.table_data = []
             return
 
@@ -81,40 +80,10 @@ class NMRResultsModel(ResultsModel):
                 continue
 
             iso_value = self.isotropic_shielding[atom_label].get("isotropic_shielding_ppm", 0.0)
-
-            # Compute tensor properties if available
-            if atom_label in self.chemical_shift_tensors:
-                tensor = np.array(self.chemical_shift_tensors[atom_label])
-
-                # Compute anisotropy and asymmetry
-                eigenvalues = np.linalg.eigvalsh(tensor)
-                eigenvalues = np.sort(eigenvalues)[::-1]  # Sort descending
-
-                # Anisotropy: δ = σ_zz - (σ_xx + σ_yy)/2
-                # Using principal components: δ = σ_33 - (σ_11 + σ_22)/2
-                anisotropy = eigenvalues[2] - (eigenvalues[0] + eigenvalues[1]) / 2
-
-                # Asymmetry: η = (σ_yy - σ_xx) / (σ_zz - σ_iso)
-                if abs(eigenvalues[2] - iso_value) > 1e-6:
-                    asymmetry = (eigenvalues[1] - eigenvalues[0]) / (eigenvalues[2] - iso_value)
-                else:
-                    asymmetry = 0.0
-
-                row = {
-                    "Atom": atom_label,
-                    "Isotropic (ppm)": f"{iso_value:.2f}",
-                    "Anisotropy (ppm)": f"{anisotropy:.2f}",
-                    "Asymmetry": f"{asymmetry:.3f}",
-                    "σ₁₁ (ppm)": f"{eigenvalues[0]:.2f}",
-                    "σ₂₂ (ppm)": f"{eigenvalues[1]:.2f}",
-                    "σ₃₃ (ppm)": f"{eigenvalues[2]:.2f}",
-                }
-            else:
-                row = {
-                    "Atom": atom_label,
-                    "Isotropic (ppm)": f"{iso_value:.2f}",
-                }
-
+            row = {
+                "Atom": atom_label,
+                "Isotropic (ppm)": f"{iso_value:.2f}",
+            }
             table_rows.append(row)
 
         self.table_data = table_rows
