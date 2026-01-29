@@ -10,9 +10,8 @@ import numpy as np
 class NMRResultsModel(ResultsModel):
     """Model for NMR Converse results."""
 
-    identifier = "nmr_converse"
+    identifier = "qeconverse"
     title = "NMR Chemical Shifts"
-    workchain_labels = ["nmr_converse"]
 
     _this_process_label = "NmrConverseWorkChain"
 
