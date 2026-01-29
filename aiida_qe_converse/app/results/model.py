@@ -26,16 +26,10 @@ class NMRResultsModel(ResultsModel):
 
     def fetch_results(self):
         """Fetch results from workchain outputs."""
-        print(f"[NMR DEBUG] fetch_results called")
-        print(f"[NMR DEBUG] process_uuid: {self.process_uuid}")
-        print(f"[NMR DEBUG] process: {self.process}")
-
         # Use the base class method to get outputs
         outputs = self._get_child_outputs()
-        print(f"[NMR DEBUG] outputs from _get_child_outputs: {outputs}")
 
         if not outputs:
-            print("[NMR DEBUG] No outputs, returning")
             return
 
         # Extract the workchain outputs
