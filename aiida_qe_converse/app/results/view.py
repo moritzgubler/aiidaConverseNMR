@@ -2,9 +2,7 @@
 Results panel for NMR Converse plugin.
 """
 import ipywidgets as ipw
-import numpy as np
 from aiidalab_qe.common.panel import ResultsPanel
-from aiidalab_qe.common.widgets import TableWidget
 from aiidalab_widgets_base.viewers import StructureDataViewer
 from .model import NMRResultsModel
 
@@ -37,11 +35,9 @@ class NMRResultsPanel(ResultsPanel[NMRResultsModel]):
         title = ipw.HTML(
             """
             <h3>NMR Chemical Shielding Results</h3>
-            <p>The table below shows the computed NMR chemical shielding tensors for the selected atoms.
+            <p>The table below shows the computed NMR chemical shielding for the selected atoms.
             Values are reported in ppm (parts per million).</p>
-            <p><b>Isotropic shielding:</b> σ<sub>iso</sub> = (σ<sub>11</sub> + σ<sub>22</sub> + σ<sub>33</sub>) / 3</p>
-            <p><b>Anisotropy:</b> δ = σ<sub>33</sub> - (σ<sub>11</sub> + σ<sub>22</sub>) / 2</p>
-            <p><b>Asymmetry:</b> η = (σ<sub>22</sub> - σ<sub>11</sub>) / (σ<sub>33</sub> - σ<sub>iso</sub>)</p>
+            <p><b>Isotropic shielding:</b> σ<sub>iso</sub> = Tr(σ) / 3</p>
             """
         )
 
@@ -76,19 +72,31 @@ class NMRResultsPanel(ResultsPanel[NMRResultsModel]):
         self.results_container.children = widgets
 
     def _render_isotropic_shielding_table(self):
-        """Render table of isotropic shielding values."""
-        table = TableWidget(layout=ipw.Layout(width="auto", height="auto"))
+        """Render table of isotropic shielding values for all atoms."""
+        if not self._model.table_data:
+            return ipw.HTML("<p>No shielding data available.</p>")
 
-        # Link model data to table
-        ipw.dlink(
-            (self._model, "table_data"),
-            (table, "data"),
-        )
+        # Build HTML table
+        html = "<h4>Chemical Shielding Tensor Summary</h4>"
+        html += "<table style='border-collapse: collapse; width: 100%; margin: 10px 0;'>"
 
-        return ipw.VBox([
-            ipw.HTML("<h4>Chemical Shielding Tensor Summary</h4>"),
-            table,
-        ])
+        # Header row
+        html += "<tr style='background-color: #f0f0f0;'>"
+        headers = ["Atom", "σ<sub>iso</sub> (ppm)"]
+        for header in headers:
+            html += f"<th style='padding: 8px; border: 1px solid #ddd; text-align: center;'>{header}</th>"
+        html += "</tr>"
+
+        # Data rows
+        for row in self._model.table_data:
+            html += "<tr>"
+            html += f"<td style='padding: 8px; border: 1px solid #ddd; text-align: center;'>{row.get('Atom', '')}</td>"
+            html += f"<td style='padding: 8px; border: 1px solid #ddd; text-align: right;'>{row.get('Isotropic (ppm)', '')}</td>"
+            html += "</tr>"
+
+        html += "</table>"
+
+        return ipw.HTML(html)
 
     def _render_tensor_components(self):
         """Render full chemical shift tensor components."""
@@ -128,24 +136,14 @@ class NMRResultsPanel(ResultsPanel[NMRResultsModel]):
             self.tensor_display.value = "<p>No tensor data available for this atom.</p>"
             return
 
-        tensor = np.array(self._model.chemical_shift_tensors[atom_label])
-
-        # Compute derived values
-        eigenvalues = np.linalg.eigvalsh(tensor)
-        eigenvalues = np.sort(eigenvalues)[::-1]
+        tensor = self._model.chemical_shift_tensors[atom_label]
 
         # Get isotropic value from model
         iso_value = self._model.isotropic_shielding.get(atom_label, {}).get("isotropic_shielding_ppm", 0.0)
 
-        # Compute anisotropy and asymmetry
-        anisotropy = eigenvalues[2] - (eigenvalues[0] + eigenvalues[1]) / 2
-        if abs(eigenvalues[2] - iso_value) > 1e-6:
-            asymmetry = (eigenvalues[1] - eigenvalues[0]) / (eigenvalues[2] - iso_value)
-        else:
-            asymmetry = 0.0
-
         # Format the tensor as HTML
         html = f"<h5>Chemical Shielding Tensor for {atom_label} (ppm)</h5>"
+        html += f"<p><b>Isotropic shielding:</b> σ<sub>iso</sub> = {iso_value:.3f} ppm</p>"
         html += "<table style='border-collapse: collapse; margin: 10px 0;'>"
         html += "<tr style='background-color: #f0f0f0;'>"
         html += "<th style='padding: 8px; border: 1px solid #ddd;'></th>"
@@ -163,22 +161,6 @@ class NMRResultsPanel(ResultsPanel[NMRResultsModel]):
             html += "</tr>"
 
         html += "</table>"
-
-        # Add derived values
-        html += "<h5>Derived Properties</h5>"
-        html += "<ul>"
-        html += f"<li><b>Isotropic shielding:</b> σ<sub>iso</sub> = {iso_value:.3f} ppm</li>"
-        html += f"<li><b>Anisotropy:</b> δ = {anisotropy:.3f} ppm</li>"
-        html += f"<li><b>Asymmetry:</b> η = {asymmetry:.3f}</li>"
-        html += "</ul>"
-
-        # Add principal components
-        html += "<h5>Principal Components (Eigenvalues)</h5>"
-        html += "<ul>"
-        html += f"<li>σ<sub>11</sub> = {eigenvalues[0]:.3f} ppm</li>"
-        html += f"<li>σ<sub>22</sub> = {eigenvalues[1]:.3f} ppm</li>"
-        html += f"<li>σ<sub>33</sub> = {eigenvalues[2]:.3f} ppm</li>"
-        html += "</ul>"
 
         self.tensor_display.value = html
 
