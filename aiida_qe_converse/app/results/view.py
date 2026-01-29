@@ -12,9 +12,8 @@ from .model import NMRResultsModel
 class NMRResultsPanel(ResultsPanel[NMRResultsModel]):
     """Panel for displaying NMR Converse results."""
 
-    identifier = "nmr_converse"
+    identifier = "qeconverse"
     title = "NMR Chemical Shifts"
-    workchain_labels = ["nmr_converse"]
 
     def __init__(self, model: NMRResultsModel, **kwargs):
         super().__init__(model, **kwargs)
