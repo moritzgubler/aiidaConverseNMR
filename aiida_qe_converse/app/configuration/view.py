@@ -148,20 +148,20 @@ class NMRConfigurationSettingPanel(ConfigurationSettingsPanel[NMRConfigurationSe
             )
             checkbox_rows.append(row)
 
-        # Combine header and rows
-        self.atom_list_container.children = [
-            header_widget,
-            ipw.VBox(
-                checkbox_rows,
-                layout=ipw.Layout(
-                    max_height="300px",
-                    overflow_y="auto",
-                    overflow_x="hidden",
-                    border="1px solid #ddd",
-                    padding="5px",
-                ),
-            ),
-        ]
+        # Use Output widget for reliable scrolling
+        scrollable_output = ipw.Output(
+            layout=ipw.Layout(
+                height="250px",
+                overflow_y="scroll",
+                border="1px solid #ddd",
+            )
+        )
+        rows_vbox = ipw.VBox(checkbox_rows)
+        with scrollable_output:
+            from IPython.display import display
+            display(rows_vbox)
+
+        self.atom_list_container.children = [header_widget, scrollable_output]
 
     def _on_checkbox_change(self, atom_idx, change):
         """Handle checkbox state change."""
