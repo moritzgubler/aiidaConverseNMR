@@ -115,38 +115,46 @@ class NMRConfigurationSettingPanel(ConfigurationSettingsPanel[NMRConfigurationSe
 
             self._atom_checkboxes[idx] = checkbox
 
-            # Create row using HBox with overflow hidden
-            index_widget = ipw.HTML(
-                f"<div style='width: 80px; text-align: center; padding: 8px;'>{idx+1}</div>",
-                layout=ipw.Layout(width="80px", flex="0 0 auto")
-            )
+            # Alternating row colors for better readability
+            bg_color = "#f5f5f5" if idx % 2 == 0 else "white"
 
-            element_widget = ipw.HTML(
-                f"<div style='padding: 8px;'>{element}</div>",
+            # Create entire row as HTML table + checkbox widget side by side
+            row_html = ipw.HTML(
+                f"""<div style='display: flex; align-items: center; background: {bg_color}; border-bottom: 1px solid #eee;'>
+                    <div style='width: 80px; text-align: center; padding: 8px;'>{idx+1}</div>
+                    <div style='flex: 1; padding: 8px;'>{element}</div>
+                </div>""",
                 layout=ipw.Layout(flex="1 1 auto")
             )
 
-            checkbox_widget = ipw.Box(
+            checkbox_cell = ipw.HBox(
                 [checkbox],
                 layout=ipw.Layout(
                     width="100px",
-                    flex="0 0 auto",
-                    display="flex",
                     justify_content="center",
-                    align_items="center",
+                    padding="4px 0",
                 ),
             )
 
             row = ipw.HBox(
-                [index_widget, element_widget, checkbox_widget],
+                [row_html, checkbox_cell],
                 layout=ipw.Layout(
-                    border_bottom="1px solid #eee",
-                    align_items="center",
+                    align_items="stretch",
                     width="100%",
-                    overflow="hidden",
                 ),
             )
+            # Add class for CSS styling
+            row_class = "atom-row-even" if idx % 2 == 0 else "atom-row-odd"
+            row.add_class(row_class)
             checkbox_rows.append(row)
+
+        # CSS for alternating row colors on checkbox column
+        css_style = ipw.HTML("""
+            <style>
+                .atom-row-even > .widget-hbox { background: #f5f5f5; }
+                .atom-row-odd > .widget-hbox { background: white; }
+            </style>
+        """)
 
         # Use Output widget for reliable scrolling
         scrollable_output = ipw.Output(
@@ -161,7 +169,7 @@ class NMRConfigurationSettingPanel(ConfigurationSettingsPanel[NMRConfigurationSe
             from IPython.display import display
             display(rows_vbox)
 
-        self.atom_list_container.children = [header_widget, scrollable_output]
+        self.atom_list_container.children = [css_style, header_widget, scrollable_output]
 
     def _on_checkbox_change(self, atom_idx, change):
         """Handle checkbox state change."""
