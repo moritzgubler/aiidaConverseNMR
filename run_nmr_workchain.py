@@ -148,20 +148,22 @@ def retrieve_results(workchain_pk):
     print(f"  - {len(converse_calc_nodes)} converse calculations")
 
     def parse_wall_time(line):
-        """Parse wall time from QE output line like '13m16.78s WALL'"""
+        """Parse wall time from QE output line like '5h44m WALL' or '13m16.78s WALL'"""
         try:
-            wall_part = line.split('s WALL')[0].strip().split()[-1]
-            if 'm' in wall_part:
-                minutes, seconds = wall_part.split('m')
-                return float(minutes) * 60 + float(seconds)
-            elif 'h' in wall_part:
-                hours, rest = wall_part.split('h')
-                if 'm' in rest:
-                    minutes, seconds = rest.split('m')
-                    return float(hours) * 3600 + float(minutes) * 60 + float(seconds)
-                return float(hours) * 3600 + float(rest)
-            else:
-                return float(wall_part)
+            wall_idx = line.index('WALL')
+            time_part = line[:wall_idx].strip().split()[-1]
+            total_seconds = 0.0
+            if 'h' in time_part:
+                hours, time_part = time_part.split('h', 1)
+                total_seconds += float(hours) * 3600
+            if 'm' in time_part:
+                minutes, time_part = time_part.split('m', 1)
+                total_seconds += float(minutes) * 60
+            if time_part:
+                time_part = time_part.rstrip('s')
+                if time_part:
+                    total_seconds += float(time_part)
+            return total_seconds if total_seconds > 0 else None
         except:
             return None
 
@@ -185,7 +187,7 @@ def retrieve_results(workchain_pk):
                     output_filename = all_attrs.get('output_filename', 'aiida.out')
                     with retrieved.open(output_filename, 'r') as f:
                         for line in f:
-                            if 's WALL' in line and ('QE-CONVERSE' in line or 'PWSCF' in line):
+                            if 'WALL' in line and ('QE-CONVERSE' in line or 'PWSCF' in line):
                                 wall_time_seconds = parse_wall_time(line)
                                 if wall_time_seconds:
                                     break
