@@ -29,7 +29,7 @@ from ase.io import read
 load_profile()
 
 
-def main(inputfileName: str, protocol: str = 'moderate', pseudo_family='gipaw_PBE'):
+def main(inputfileName: str, protocol: str = 'moderate', pseudo_family='gipaw_PBE', target_atoms=None):
     """
     Main function to submit the NMR converse workchain.
 
@@ -62,7 +62,7 @@ def main(inputfileName: str, protocol: str = 'moderate', pseudo_family='gipaw_PB
         structure=structure,
         protocol=protocol,  # Options: 'fast', 'moderate', 'precise'
         pseudo_family=pseudo_family,
-        target_atoms=None,  # None = all atoms, or provide list like [0, 1, 2]
+        target_atoms=target_atoms,  # None = all atoms, or provide list like [0, 1, 2]
         queue_name='daily',  # Optional: specify queue name
     )
 
@@ -296,6 +296,14 @@ if __name__ == '__main__':
         default='gipaw_PBE',
         help="Pseudopotential family (default: 'gipaw_PBE')"
     )
+    parser.add_argument(
+        '--target-atoms', '-t',
+        type=int,
+        nargs='+',
+        default=None,
+        metavar='IDX',
+        help='Zero-based indices of atoms of interest (default: all atoms). Example: -t 0 3 5'
+    )
     args = parser.parse_args()
 
     if args.retrieve:
@@ -303,4 +311,4 @@ if __name__ == '__main__':
     else:
         if not args.input:
             parser.error('--input/-i is required when not using --retrieve')
-        workchain = main(args.input, args.protocol, args.pseudo_family)
+        workchain = main(args.input, args.protocol, args.pseudo_family, args.target_atoms)
