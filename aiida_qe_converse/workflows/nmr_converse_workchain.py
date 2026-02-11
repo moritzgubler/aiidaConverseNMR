@@ -153,6 +153,7 @@ class NmrConverseWorkChain(WorkChain):
                 'ecutwfc': 60.0,
                 'kpoints_distance': 0.5,
                 'conv_thr': 1.0e-7,
+                'degauss': 1e-2,
                 'mixing_beta': 0.3,
                 'q_gipaw': 0.01,
                 'num_machines': 1,
@@ -164,6 +165,7 @@ class NmrConverseWorkChain(WorkChain):
                 'ecutwfc': 80.0,
                 'kpoints_distance': 0.25,
                 'conv_thr': 1.0e-8,
+                'degauss': 5e-3,
                 'mixing_beta': 0.3,
                 'q_gipaw': 0.01,
                 'num_machines': 1,
@@ -173,8 +175,9 @@ class NmrConverseWorkChain(WorkChain):
             },
             'precise': {
                 'ecutwfc': 100.0,
-                'kpoints_distance': 0.15,
+                'kpoints_distance': 0.08,
                 'conv_thr': 1.0e-9,
+                'degauss': 1e-3,
                 'mixing_beta': 0.3,
                 'q_gipaw': 0.01,
                 'num_machines': 1,
@@ -221,8 +224,7 @@ class NmrConverseWorkChain(WorkChain):
         if electronic_type == ElectronicType.INSULATOR:
             degauss = 1e-8
         else:  # METAL or UNKNOWN
-            degauss = 1e-2
-
+            degauss = proto["degauss"]
         # Prepare SCF parameters
         scf_parameters = {
             'CONTROL': {
