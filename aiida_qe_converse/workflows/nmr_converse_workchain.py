@@ -163,9 +163,9 @@ class NmrConverseWorkChain(WorkChain):
             },
             'moderate': {
                 'ecutwfc': 80.0,
-                'kpoints_distance': 0.25,
+                'kpoints_distance': 0.15,
                 'conv_thr': 1.0e-8,
-                'degauss': 5e-3,
+                'degauss': 1e-3,
                 'mixing_beta': 0.3,
                 'q_gipaw': 0.01,
                 'num_machines': 1,
