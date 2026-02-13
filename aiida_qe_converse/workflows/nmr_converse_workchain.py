@@ -85,6 +85,11 @@ class NmrConverseWorkChain(WorkChain):
                    help='Whether to keep du/dk in memory (default: True)')
         spec.input('electronic_type', valid_type=orm.Str, required=False, default=lambda: orm.Str('METAL'),
                    help='Electronic type: METAL, INSULATOR, or UNKNOWN (default: METAL)')
+        spec.input('spin_polarized', valid_type=orm.Bool, required=False, default=lambda: orm.Bool(False),
+                   help='Whether to perform a spin-polarized (nspin=2) collinear calculation')
+        spec.input('initial_magnetic_moments', valid_type=orm.Dict, required=False,
+                   help='Initial magnetic moments per kind name, e.g. {"Fe": 0.5, "O": 0.0}. '
+                        'Only used when spin_polarized is True. If not provided, all moments default to 0.0.')
 
         # Outline
         spec.outline(
@@ -123,6 +128,8 @@ class NmrConverseWorkChain(WorkChain):
         pseudo_family='gipaw',
         target_atoms=None,
         electronic_type=None,
+        spin_polarized=False,
+        initial_magnetic_moments=None,
         overrides=None,
         **kwargs
     ):
@@ -139,6 +146,10 @@ class NmrConverseWorkChain(WorkChain):
                          If None, computes for all atoms.
             electronic_type: ElectronicType enum (METAL, INSULATOR, or UNKNOWN).
                             Defaults to METAL if not specified.
+            spin_polarized: If True, perform a spin-polarized (nspin=2) collinear calculation.
+            initial_magnetic_moments: Dict mapping kind names to starting_magnetization values,
+                                      e.g. {'Fe': 0.5, 'O': 0.0}. Only used when spin_polarized=True.
+                                      If not provided, all moments default to 0.0.
             overrides: Dict with override parameters for specific inputs
             **kwargs: Additional inputs to override
 
@@ -235,7 +246,7 @@ class NmrConverseWorkChain(WorkChain):
             'SYSTEM': {
                 'ecutwfc': proto['ecutwfc'],
                 'occupations': 'smearing',
-                'smearing': 'gaussian',
+                'smearing': 'cold',
                 'degauss': degauss,
                 'nosym': True,  # CRITICAL: Disable symmetry for NMR
                 'noinv': True,  # CRITICAL: Disable inversion symmetry
@@ -286,6 +297,9 @@ class NmrConverseWorkChain(WorkChain):
         builder.dudk_method = orm.Str(kwargs.get('dudk_method', 'covariant'))
         builder.dudk_in_memory = orm.Bool(kwargs.get('dudk_in_memory', True))
         builder.electronic_type = orm.Str(electronic_type.value)
+        builder.spin_polarized = orm.Bool(spin_polarized)
+        if initial_magnetic_moments is not None:
+            builder.initial_magnetic_moments = orm.Dict(dict=initial_magnetic_moments)
 
         return builder
 
@@ -318,13 +332,30 @@ class NmrConverseWorkChain(WorkChain):
 
         pseudo_dict = self.inputs.pseudos.get_dict()
         pseudos = {kind: orm.load_node(pk) for kind, pk in pseudo_dict.items()}
-        
+
+        # Modify SCF parameters for spin-polarized calculation if requested
+        scf_parameters = self.inputs.scf_parameters.get_dict()
+        if self.inputs.spin_polarized.value:
+            self.report('Setting up spin-polarized (nspin=2) calculation')
+            scf_parameters.setdefault('SYSTEM', {})
+            scf_parameters['SYSTEM']['nspin'] = 2
+
+            # Set starting_magnetization for each kind (default 0.0)
+            kind_names = self.inputs.structure.get_kind_names()
+            user_moments = {}
+            if 'initial_magnetic_moments' in self.inputs:
+                user_moments = self.inputs.initial_magnetic_moments.get_dict()
+            starting_mag = {kind: user_moments.get(kind, 0.0) for kind in kind_names}
+            scf_parameters['SYSTEM']['starting_magnetization'] = starting_mag
+
+        scf_params_node = orm.Dict(dict=scf_parameters)
+
         # Prepare inputs for PwBaseWorkChain
         inputs = {
             'pw': {
                 'code': self.inputs.pw_code,
                 'structure': self.inputs.structure,
-                'parameters': self.inputs.scf_parameters,
+                'parameters': scf_params_node,
                 'pseudos': pseudos,
                 'metadata': {
                     'options': self.inputs.options.get_dict(),

@@ -29,7 +29,8 @@ from ase.io import read
 load_profile()
 
 
-def main(inputfileName: str, protocol: str = 'moderate', pseudo_family='gipaw_PBE', target_atoms=None):
+def main(inputfileName: str, protocol: str = 'moderate', pseudo_family='gipaw_PBE', target_atoms=None,
+         spin_polarized=False, initial_magnetic_moments=None):
     """
     Main function to submit the NMR converse workchain.
 
@@ -63,6 +64,8 @@ def main(inputfileName: str, protocol: str = 'moderate', pseudo_family='gipaw_PB
         protocol=protocol,  # Options: 'fast', 'moderate', 'precise'
         pseudo_family=pseudo_family,
         target_atoms=target_atoms,  # None = all atoms, or provide list like [0, 1, 2]
+        spin_polarized=spin_polarized,
+        initial_magnetic_moments=initial_magnetic_moments,
         queue_name='daily',  # Optional: specify queue name
     )
 
@@ -304,6 +307,20 @@ if __name__ == '__main__':
         metavar='IDX',
         help='Zero-based indices of atoms of interest (default: all atoms). Example: -t 0 3 5'
     )
+    parser.add_argument(
+        '--spin-polarized',
+        action='store_true',
+        default=False,
+        help='Perform a spin-polarized (nspin=2) collinear calculation'
+    )
+    parser.add_argument(
+        '--magnetic-moments', '-m',
+        type=str,
+        default=None,
+        metavar='JSON',
+        help='Initial magnetic moments as JSON, e.g. \'{"Fe": 0.5, "O": 0.0}\'. '
+             'Only used with --spin-polarized. Defaults to 0.0 for all kinds.'
+    )
     args = parser.parse_args()
 
     if args.retrieve:
@@ -311,4 +328,9 @@ if __name__ == '__main__':
     else:
         if not args.input:
             parser.error('--input/-i is required when not using --retrieve')
-        workchain = main(args.input, args.protocol, args.pseudo_family, args.target_atoms)
+        magnetic_moments = None
+        if args.magnetic_moments:
+            import json
+            magnetic_moments = json.loads(args.magnetic_moments)
+        workchain = main(args.input, args.protocol, args.pseudo_family, args.target_atoms,
+                         args.spin_polarized, magnetic_moments)
