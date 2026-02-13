@@ -180,9 +180,9 @@ class NmrConverseWorkChain(WorkChain):
                 'mixing_beta': 0.3,
                 'q_gipaw': 0.01,
                 'num_machines': 1,
-                'num_mpiprocs_per_machine': 16,
+                'num_mpiprocs_per_machine': 32,
                 'max_wallclock_seconds': 3600 * 23,
-                'max_memory_kb': 64000000,
+                'max_memory_kb': 128000000,
             },
             'precise': {
                 'ecutwfc': 100.0,
