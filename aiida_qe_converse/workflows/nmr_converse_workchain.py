@@ -175,7 +175,7 @@ class NmrConverseWorkChain(WorkChain):
             'moderate': {
                 'ecutwfc': 80.0,
                 'kpoints_distance': 0.15,
-                'conv_thr': 1.0e-8,
+                'conv_thr': 1.0e-9,
                 'degauss': 1e-3,
                 'mixing_beta': 0.3,
                 'q_gipaw': 0.01,
@@ -186,15 +186,15 @@ class NmrConverseWorkChain(WorkChain):
             },
             'precise': {
                 'ecutwfc': 100.0,
-                'kpoints_distance': 0.08,
-                'conv_thr': 1.0e-9,
+                'kpoints_distance': 0.06,
+                'conv_thr': 1.0e-10,
                 'degauss': 1e-3,
                 'mixing_beta': 0.3,
                 'q_gipaw': 0.01,
                 'num_machines': 1,
                 'num_mpiprocs_per_machine': 32,
                 'max_wallclock_seconds': 3600 * 23,
-                'max_memory_kb': 128000000,
+                'max_memory_kb': 500000000,
             }
         }
 
@@ -246,7 +246,7 @@ class NmrConverseWorkChain(WorkChain):
             'SYSTEM': {
                 'ecutwfc': proto['ecutwfc'],
                 'occupations': 'smearing',
-                'smearing': 'cold',
+                'smearing': 'fermi-dirac',
                 'degauss': degauss,
                 'nosym': True,  # CRITICAL: Disable symmetry for NMR
                 'noinv': True,  # CRITICAL: Disable inversion symmetry
