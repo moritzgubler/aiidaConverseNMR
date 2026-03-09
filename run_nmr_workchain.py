@@ -43,8 +43,8 @@ def main(inputfileName: str, protocol: str = 'moderate', pseudo_family='gipaw_PB
         raise ValueError("Pseudofamily not allowed. Given pseudo_family: " + pseudo_family)
 
     # 1. Define codes
-    pw_code = orm.load_code('qe-7.2@merlin')
-    converse_code = orm.load_code('qe-converse@merlin')
+    pw_code = orm.load_code('qe-7.5@merlin')
+    converse_code = orm.load_code('qe-converse-7.5@merlin')
     print(f"Using pw.x code: {pw_code.label}")
     print(f"Using qe-converse code: {converse_code.label}")
 
