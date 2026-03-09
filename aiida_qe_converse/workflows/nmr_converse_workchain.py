@@ -164,6 +164,7 @@ class NmrConverseWorkChain(WorkChain):
                 'ecutwfc': 60.0,
                 'kpoints_distance': 0.5,
                 'conv_thr': 1.0e-7,
+                'converse_conv_threshold': 1.0e-7,
                 'degauss': 1e-2,
                 'mixing_beta': 0.3,
                 'q_gipaw': 0.01,
@@ -173,28 +174,30 @@ class NmrConverseWorkChain(WorkChain):
                 'max_memory_kb': 32000000,
             },
             'moderate': {
-                'ecutwfc': 80.0,
+                'ecutwfc': 90.0,
                 'kpoints_distance': 0.15,
-                'conv_thr': 1.0e-9,
-                'degauss': 1e-3,
+                'conv_thr': 1.0e-10,
+                'converse_conv_threshold': 1.0e-10,
+                'degauss': 5e-3,
                 'mixing_beta': 0.3,
                 'q_gipaw': 0.01,
                 'num_machines': 1,
                 'num_mpiprocs_per_machine': 32,
                 'max_wallclock_seconds': 3600 * 23,
-                'max_memory_kb': 128000000,
+                'max_memory_kb': 490000000,
             },
             'precise': {
                 'ecutwfc': 100.0,
-                'kpoints_distance': 0.06,
-                'conv_thr': 1.0e-10,
-                'degauss': 1e-3,
-                'mixing_beta': 0.3,
+                'kpoints_distance': 0.075,
+                'conv_thr': 1.0e-11,
+                'converse_conv_threshold': 1.0e-11,
+                'degauss': 1e-2,
+                'mixing_beta': 0.4,
                 'q_gipaw': 0.01,
                 'num_machines': 1,
                 'num_mpiprocs_per_machine': 32,
                 'max_wallclock_seconds': 3600 * 23,
-                'max_memory_kb': 500000000,
+                'max_memory_kb': 490000000,
             }
         }
 
@@ -259,7 +262,8 @@ class NmrConverseWorkChain(WorkChain):
 
         # Prepare converse parameters
         converse_parameters = {
-            'mixing_beta': proto['mixing_beta']
+            'mixing_beta': proto['mixing_beta'],
+            'conv_threshold': proto['converse_conv_threshold'],
         }
 
         # Prepare computational options
