@@ -320,25 +320,70 @@ class NmrConverseWorkChain(WorkChain):
     def setup(self):
         """Initialize the workchain."""
         self.report('Setting up NMR converse workchain')
-        
+
         # Get structure information
         structure = self.inputs.structure
         self.ctx.num_sites = len(structure.sites)
-        
+
         # Get target atoms
         target_atoms = self.inputs.target_atoms.get_list()
         self.ctx.target_atoms = target_atoms
         self.ctx.directions = ['x', 'y', 'z']
-        
+
         # Get atom labels for each target
         self.ctx.atom_labels = []
         for idx in target_atoms:
             site = structure.sites[idx]
             kind_name = site.kind_name
             self.ctx.atom_labels.append(f"{kind_name}{idx+1}")
-        
-        self.report(f'Will compute chemical shifts for {len(target_atoms)} atoms')
-        self.report(f'Target atoms: {self.ctx.atom_labels}')
+
+        # --- Structured input parameter report ---
+        scf_sys = self.inputs.scf_parameters.get_dict().get('SYSTEM', {})
+        scf_el  = self.inputs.scf_parameters.get_dict().get('ELECTRONS', {})
+        opts    = self.inputs.options.get_dict()
+        res     = opts.get('resources', {})
+
+        self.report('=== INPUT PARAMETERS ===')
+        self.report(f'  Structure formula  : {structure.get_formula()}')
+        self.report(f'  Number of atoms    : {self.ctx.num_sites}')
+        self.report(f'  Electronic type    : {self.inputs.electronic_type.value}')
+        self.report(f'  Spin polarized     : {self.inputs.spin_polarized.value}')
+        if self.inputs.spin_polarized.value and 'initial_magnetic_moments' in self.inputs:
+            self.report(f'  Initial moments    : {self.inputs.initial_magnetic_moments.get_dict()}')
+        self.report(f'  Pseudo family      : (from pseudos dict)')
+        self.report(f'--- SCF ---')
+        self.report(f'  PW cutoff (ecutwfc): {scf_sys.get("ecutwfc")} Ry')
+        self.report(f'  K-point distance   : {self.inputs.kpoints_distance.value} 1/Ang')
+        self.report(f'  Smearing type      : {scf_sys.get("smearing")}')
+        self.report(f'  Smearing width     : {scf_sys.get("degauss")} Ry')
+        self.report(f'  Conv threshold     : {scf_el.get("conv_thr")}')
+        self.report(f'  Mixing beta (SCF)  : {scf_el.get("mixing_beta")}')
+        self.report(f'--- Converse ---')
+        self.report(f'  q_gipaw            : {self.inputs.q_gipaw.value}')
+        self.report(f'  dudk method        : {self.inputs.dudk_method.value}')
+        self.report(f'  dudk in memory     : {self.inputs.dudk_in_memory.value}')
+        self.report(f'  Mixing beta        : {self.inputs.mixing_beta.value}')
+        conv_thr_c = self.inputs.converse_parameters.get_dict().get('conv_threshold')
+        if conv_thr_c is not None:
+            self.report(f'  Conv threshold     : {conv_thr_c}')
+        self.report(f'--- Resources ---')
+        self.report(f'  Machines           : {res.get("num_machines")}')
+        self.report(f'  MPI procs/machine  : {res.get("num_mpiprocs_per_machine")}')
+        self.report(f'  Max wallclock      : {opts.get("max_wallclock_seconds")} s')
+        queue = opts.get("queue_name")
+        if queue:
+            self.report(f'  Queue              : {queue}')
+        self.report(f'--- Target atoms ({len(target_atoms)}) ---')
+        for idx in target_atoms:
+            site = structure.sites[idx]
+            pos = site.position
+            self.report(f'  [{idx}] {site.kind_name:4s}  ({pos[0]:10.5f}, {pos[1]:10.5f}, {pos[2]:10.5f}) Ang')
+        self.report(f'--- All atomic positions ---')
+        for i, site in enumerate(structure.sites):
+            pos = site.position
+            marker = ' <-- NMR target' if i in target_atoms else ''
+            self.report(f'  [{i:3d}] {site.kind_name:4s}  ({pos[0]:10.5f}, {pos[1]:10.5f}, {pos[2]:10.5f}) Ang{marker}')
+        self.report('=========================')
     
     def run_scf(self):
         """Run the SCF calculation with -k symmetry disabled."""
