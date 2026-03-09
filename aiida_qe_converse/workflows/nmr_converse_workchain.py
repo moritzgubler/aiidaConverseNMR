@@ -130,6 +130,8 @@ class NmrConverseWorkChain(WorkChain):
         electronic_type=None,
         spin_polarized=False,
         initial_magnetic_moments=None,
+        smearing_type=None,
+        smearing_degauss=None,
         overrides=None,
         **kwargs
     ):
@@ -150,6 +152,10 @@ class NmrConverseWorkChain(WorkChain):
             initial_magnetic_moments: Dict mapping kind names to starting_magnetization values,
                                       e.g. {'Fe': 0.5, 'O': 0.0}. Only used when spin_polarized=True.
                                       If not provided, all moments default to 0.0.
+            smearing_type: Smearing function to use (e.g. 'fermi-dirac', 'methfessel-paxton',
+                           'marzari-vanderbilt', 'gaussian'). Overrides the protocol default.
+            smearing_degauss: Smearing width in Ry. Overrides the protocol default (and the
+                              insulator override of 1e-8).
             overrides: Dict with override parameters for specific inputs
             **kwargs: Additional inputs to override
 
@@ -234,11 +240,15 @@ class NmrConverseWorkChain(WorkChain):
         elif isinstance(electronic_type, str):
             electronic_type = ElectronicType(electronic_type)
 
-        # Set degauss based on electronic type
+        # Set degauss based on electronic type, then allow explicit override
         if electronic_type == ElectronicType.INSULATOR:
             degauss = 1e-8
         else:  # METAL or UNKNOWN
             degauss = proto["degauss"]
+        if smearing_degauss is not None:
+            degauss = smearing_degauss
+        smearing = smearing_type if smearing_type is not None else 'fermi-dirac'
+
         # Prepare SCF parameters
         scf_parameters = {
             'CONTROL': {
@@ -249,7 +259,7 @@ class NmrConverseWorkChain(WorkChain):
             'SYSTEM': {
                 'ecutwfc': proto['ecutwfc'],
                 'occupations': 'smearing',
-                'smearing': 'fermi-dirac',
+                'smearing': smearing,
                 'degauss': degauss,
                 'nosym': True,  # CRITICAL: Disable symmetry for NMR
                 'noinv': True,  # CRITICAL: Disable inversion symmetry

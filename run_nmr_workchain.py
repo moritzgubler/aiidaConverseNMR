@@ -30,7 +30,7 @@ load_profile()
 
 
 def main(inputfileName: str, protocol: str = 'moderate', pseudo_family='gipaw_PBE', target_atoms=None,
-         spin_polarized=False, initial_magnetic_moments=None):
+         spin_polarized=False, initial_magnetic_moments=None, smearing_type=None, smearing_degauss=None):
     """
     Main function to submit the NMR converse workchain.
 
@@ -66,6 +66,8 @@ def main(inputfileName: str, protocol: str = 'moderate', pseudo_family='gipaw_PB
         target_atoms=target_atoms,  # None = all atoms, or provide list like [0, 1, 2]
         spin_polarized=spin_polarized,
         initial_magnetic_moments=initial_magnetic_moments,
+        smearing_type=smearing_type,
+        smearing_degauss=smearing_degauss,
         queue_name='daily',  # Optional: specify queue name
     )
 
@@ -321,6 +323,20 @@ if __name__ == '__main__':
         help='Initial magnetic moments as JSON, e.g. \'{"Fe": 0.5, "O": 0.0}\'. '
              'Only used with --spin-polarized. Defaults to 0.0 for all kinds.'
     )
+    parser.add_argument(
+        '--smearing-type', '-s',
+        type=str,
+        default=None,
+        choices=['fermi-dirac', 'methfessel-paxton', 'marzari-vanderbilt', 'gaussian'],
+        help="Smearing function (default: 'fermi-dirac')"
+    )
+    parser.add_argument(
+        '--smearing-degauss', '-d',
+        type=float,
+        default=None,
+        metavar='RY',
+        help='Smearing width in Ry (default: from protocol)'
+    )
     args = parser.parse_args()
 
     if args.retrieve:
@@ -333,4 +349,4 @@ if __name__ == '__main__':
             import json
             magnetic_moments = json.loads(args.magnetic_moments)
         workchain = main(args.input, args.protocol, args.pseudo_family, args.target_atoms,
-                         args.spin_polarized, magnetic_moments)
+                         args.spin_polarized, magnetic_moments, args.smearing_type, args.smearing_degauss)
