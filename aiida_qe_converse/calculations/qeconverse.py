@@ -47,6 +47,8 @@ class QeConverseCalculation(CalcJob):
         spec.input('metadata.options.parent_folder_name', valid_type=str,
                    default=cls._DEFAULT_PARENT_FOLDER_NAME,
                    help='Name of parent folder to symlink (usually "out")')
+        spec.input('npool', valid_type=orm.Int, required=False, default=lambda: orm.Int(1),
+                   help='Number of k-point pools for MPI parallelization (-nk flag)')
         
         # Output specifications
         spec.output('output_parameters', valid_type=orm.Dict, required=True,
@@ -90,7 +92,8 @@ class QeConverseCalculation(CalcJob):
         # Code information
         calcinfo.codes_info = [datastructures.CodeInfo()]
         codeinfo = calcinfo.codes_info[0]
-        codeinfo.cmdline_params = []
+        npool = self.inputs.npool.value if 'npool' in self.inputs else 1
+        codeinfo.cmdline_params = ['-nk', str(npool)] if npool > 1 else []
         codeinfo.stdin_name = input_filename
         codeinfo.stdout_name = self.metadata.options.output_filename
         codeinfo.code_uuid = self.inputs.code.uuid

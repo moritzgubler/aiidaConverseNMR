@@ -9,12 +9,45 @@ This workchain performs:
 Author: Generated for AiiDA workflow
 """
 
+from math import gcd
+
 from aiida import orm
 from aiida.engine import WorkChain, ToContext, calcfunction
 from aiida_quantumespresso.workflows.pw.base import PwBaseWorkChain
 from aiida_quantumespresso.common.types import ElectronicType
 from .qeconverse_base import QeConverseBaseWorkChain
 import numpy as np
+
+
+_NODE_CORES = 128
+_NODE_MEMORY_KB = 490_000_000
+
+
+def _compute_optimal_npool(target_procs, num_kpoints, num_machines=1, tolerance=0.4):
+    """Find (nk, num_mpiprocs_per_machine) that maximises k-point parallelisation.
+
+    Searches for the largest nk <= num_kpoints such that a total MPI count
+    within *tolerance* of target_procs exists that is divisible by both nk
+    and num_machines (so every machine gets an equal share and every pool
+    gets an equal share of processes).
+
+    Returns:
+        (nk, num_mpiprocs_per_machine)
+    """
+    min_total = max(num_machines, int(target_procs * (1 - tolerance)))
+    max_total = int(target_procs * (1 + tolerance))
+
+    for nk in range(min(num_kpoints, max_total), 0, -1):
+        lcm = nk * num_machines // gcd(nk, num_machines)
+        lo = ((min_total + lcm - 1) // lcm) * lcm  # smallest multiple of lcm >= min_total
+        if lo > max_total:
+            continue
+        candidates = range(lo, max_total + 1, lcm)
+        total = min(candidates, key=lambda p: abs(p - target_procs))
+        return nk, total // num_machines
+
+    # Fallback: no k-point parallelisation, keep target procs as-is
+    return 1, (target_procs + num_machines - 1) // num_machines
 
 
 @calcfunction
@@ -85,6 +118,9 @@ class NmrConverseWorkChain(WorkChain):
                    help='Whether to keep du/dk in memory (default: True)')
         spec.input('electronic_type', valid_type=orm.Str, required=False, default=lambda: orm.Str('METAL'),
                    help='Electronic type: METAL, INSULATOR, or UNKNOWN (default: METAL)')
+        spec.input('npool', valid_type=orm.Int, required=False, default=lambda: orm.Int(0),
+                   help='Number of k-point pools for converse (-nk flag). '
+                        '0 = auto-determine from k-mesh and MPI count (default).')
         spec.input('spin_polarized', valid_type=orm.Bool, required=False, default=lambda: orm.Bool(False),
                    help='Whether to perform a spin-polarized (nspin=2) collinear calculation')
         spec.input('initial_magnetic_moments', valid_type=orm.Dict, required=False,
@@ -175,22 +211,20 @@ class NmrConverseWorkChain(WorkChain):
                 'mixing_beta': 0.3,
                 'q_gipaw': 0.01,
                 'num_machines': 1,
-                'num_mpiprocs_per_machine': 8,
+                'num_mpiprocs_per_machine': 16,
                 'max_wallclock_seconds': 3600 * 23,
-                'max_memory_kb': 32000000,
             },
             'moderate': {
                 'ecutwfc': 90.0,
                 'kpoints_distance': 0.15,
                 'conv_thr': 1.0e-10,
                 'converse_conv_threshold': 1.0e-10,
-                'degauss': 5e-3,
+                'degauss': 1e-2,
                 'mixing_beta': 0.3,
                 'q_gipaw': 0.01,
                 'num_machines': 1,
-                'num_mpiprocs_per_machine': 32,
+                'num_mpiprocs_per_machine': 64,
                 'max_wallclock_seconds': 3600 * 23,
-                'max_memory_kb': 490000000,
             },
             'precise': {
                 'ecutwfc': 100.0,
@@ -201,9 +235,8 @@ class NmrConverseWorkChain(WorkChain):
                 'mixing_beta': 0.4,
                 'q_gipaw': 0.01,
                 'num_machines': 1,
-                'num_mpiprocs_per_machine': 32,
+                'num_mpiprocs_per_machine': 128,
                 'max_wallclock_seconds': 3600 * 23,
-                'max_memory_kb': 490000000,
             }
         }
 
@@ -310,6 +343,7 @@ class NmrConverseWorkChain(WorkChain):
         builder.mixing_beta = orm.Float(proto['mixing_beta'])
         builder.dudk_method = orm.Str(kwargs.get('dudk_method', 'covariant'))
         builder.dudk_in_memory = orm.Bool(kwargs.get('dudk_in_memory', True))
+        builder.npool = orm.Int(kwargs.get('npool', 0))
         builder.electronic_type = orm.Str(electronic_type.value)
         builder.spin_polarized = orm.Bool(spin_polarized)
         if initial_magnetic_moments is not None:
@@ -366,9 +400,43 @@ class NmrConverseWorkChain(WorkChain):
         conv_thr_c = self.inputs.converse_parameters.get_dict().get('conv_threshold')
         if conv_thr_c is not None:
             self.report(f'  Conv threshold     : {conv_thr_c}')
+        # --- Auto-compute npool and (possibly adjusted) MPI count for converse ---
+        num_machines = res.get('num_machines', 1)
+        target_mpiprocs = res.get('num_mpiprocs_per_machine', 1)
+        target_total = num_machines * target_mpiprocs
+
+        if self.inputs.npool.value == 0:
+            kpts = orm.KpointsData()
+            kpts.set_cell_from_structure(self.inputs.structure)
+            kpts.set_kpoints_mesh_from_density(self.inputs.kpoints_distance.value)
+            mesh = kpts.get_kpoints_mesh()[0]
+            num_kpoints = mesh[0] * mesh[1] * mesh[2]
+
+            nk, mpiprocs = _compute_optimal_npool(target_total, num_kpoints, num_machines)
+            self.ctx.converse_npool = nk
+            self.ctx.converse_mpiprocs_per_machine = mpiprocs
+            auto_str = f'auto ({num_kpoints} k-points, target {target_total} procs)'
+        else:
+            nk = self.inputs.npool.value
+            self.ctx.converse_npool = nk
+            self.ctx.converse_mpiprocs_per_machine = target_mpiprocs
+            auto_str = 'manual'
+
+        scf_opts = dict(opts)
+        scf_opts['max_memory_kb'] = int(_NODE_MEMORY_KB * target_mpiprocs / _NODE_CORES)
+        self.ctx.scf_options = scf_opts
+
+        converse_opts = dict(opts)
+        converse_opts['resources'] = dict(res)
+        converse_opts['resources']['num_mpiprocs_per_machine'] = self.ctx.converse_mpiprocs_per_machine
+        converse_opts['max_memory_kb'] = int(_NODE_MEMORY_KB * self.ctx.converse_mpiprocs_per_machine / _NODE_CORES)
+        self.ctx.converse_options = converse_opts
+
         self.report(f'--- Resources ---')
-        self.report(f'  Machines           : {res.get("num_machines")}')
-        self.report(f'  MPI procs/machine  : {res.get("num_mpiprocs_per_machine")}')
+        self.report(f'  Machines           : {num_machines}')
+        self.report(f'  MPI procs/machine  : {target_mpiprocs} (SCF, {scf_opts["max_memory_kb"] / 1e6:.1f} GB)')
+        self.report(f'  MPI procs/machine  : {self.ctx.converse_mpiprocs_per_machine} (converse, {converse_opts["max_memory_kb"] / 1e6:.1f} GB)')
+        self.report(f'  K-point pools (-nk): {self.ctx.converse_npool} [{auto_str}]')
         self.report(f'  Max wallclock      : {opts.get("max_wallclock_seconds")} s')
         queue = opts.get("queue_name")
         if queue:
@@ -417,7 +485,7 @@ class NmrConverseWorkChain(WorkChain):
                 'parameters': scf_params_node,
                 'pseudos': pseudos,
                 'metadata': {
-                    'options': self.inputs.options.get_dict(),
+                    'options': self.ctx.scf_options,
                 }
             },
             'kpoints_distance': self.inputs.kpoints_distance,
@@ -484,8 +552,9 @@ class NmrConverseWorkChain(WorkChain):
                         'code': self.inputs.converse_code,
                         'parameters': orm.Dict(dict={'input_qeconverse': params}),
                         'parent_folder': self.ctx.scf_remote_folder,
+                        'npool': orm.Int(self.ctx.converse_npool),
                         'metadata': {
-                            'options': self.inputs.options.get_dict(),
+                            'options': self.ctx.converse_options,
                             'label': f'converse_{atom_label}_{direction}',
                             'description': f'Converse calculation for atom {atom_label} in {direction} direction'
                         }

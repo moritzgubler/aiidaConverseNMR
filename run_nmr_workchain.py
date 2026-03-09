@@ -30,7 +30,8 @@ load_profile()
 
 
 def main(inputfileName: str, protocol: str = 'moderate', pseudo_family='gipaw_PBE', target_atoms=None,
-         spin_polarized=False, initial_magnetic_moments=None, smearing_type=None, smearing_degauss=None):
+         spin_polarized=False, initial_magnetic_moments=None, smearing_type=None, smearing_degauss=None,
+         npool=0):
     """
     Main function to submit the NMR converse workchain.
 
@@ -68,6 +69,7 @@ def main(inputfileName: str, protocol: str = 'moderate', pseudo_family='gipaw_PB
         initial_magnetic_moments=initial_magnetic_moments,
         smearing_type=smearing_type,
         smearing_degauss=smearing_degauss,
+        npool=npool,
         queue_name='daily',  # Optional: specify queue name
     )
 
@@ -337,6 +339,14 @@ if __name__ == '__main__':
         metavar='RY',
         help='Smearing width in Ry (default: from protocol)'
     )
+    parser.add_argument(
+        '--npool', '-n',
+        type=int,
+        default=0,
+        metavar='N',
+        help='Number of k-point pools for converse calculations (-nk). '
+             '0 = auto-determine from k-mesh and MPI count (default).'
+    )
     args = parser.parse_args()
 
     if args.retrieve:
@@ -349,4 +359,5 @@ if __name__ == '__main__':
             import json
             magnetic_moments = json.loads(args.magnetic_moments)
         workchain = main(args.input, args.protocol, args.pseudo_family, args.target_atoms,
-                         args.spin_polarized, magnetic_moments, args.smearing_type, args.smearing_degauss)
+                         args.spin_polarized, magnetic_moments, args.smearing_type, args.smearing_degauss,
+                         args.npool)
