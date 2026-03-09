@@ -203,10 +203,10 @@ class NmrConverseWorkChain(WorkChain):
         # Protocol definitions
         protocols = {
             'fast': {
-                'ecutwfc': 60.0,
-                'kpoints_distance': 0.5,
-                'conv_thr': 1.0e-7,
-                'converse_conv_threshold': 1.0e-7,
+                'ecutwfc': 80.0,
+                'kpoints_distance': 0.25,
+                'conv_thr': 1.0e-10,
+                'converse_conv_threshold': 1.0e-10,
                 'degauss': 1e-2,
                 'mixing_beta': 0.3,
                 'q_gipaw': 0.01,
@@ -216,7 +216,7 @@ class NmrConverseWorkChain(WorkChain):
             },
             'moderate': {
                 'ecutwfc': 90.0,
-                'kpoints_distance': 0.15,
+                'kpoints_distance': 0.12,
                 'conv_thr': 1.0e-10,
                 'converse_conv_threshold': 1.0e-10,
                 'degauss': 1e-2,
@@ -228,7 +228,7 @@ class NmrConverseWorkChain(WorkChain):
             },
             'precise': {
                 'ecutwfc': 100.0,
-                'kpoints_distance': 0.075,
+                'kpoints_distance': 0.08,
                 'conv_thr': 1.0e-11,
                 'converse_conv_threshold': 1.0e-11,
                 'degauss': 1e-2,
