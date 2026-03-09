@@ -52,11 +52,6 @@ class QeConverseBaseWorkChain(BaseRestartWorkChain):
 
     def prepare_process(self):
         """Prepare the inputs for the next calculation."""
-        max_wallclock_seconds = self.ctx.inputs.metadata.options.get('max_wallclock_seconds', None)
-
-        if max_wallclock_seconds is not None:
-            max_seconds = max_wallclock_seconds * 0.95
-            self.ctx.inputs.parameters['input_qeconverse']['max_seconds'] = max_seconds
         self.ctx.inputs.parameters = orm.Dict(dict=self.ctx.inputs.parameters)
 
     @process_handler(priority=600)
