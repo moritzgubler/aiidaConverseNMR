@@ -17,6 +17,9 @@ setup(
         'aiida-quantumespresso>=4.0.0',
     ],
     entry_points={
+        'console_scripts': [
+            'nmr-converse = aiida_qe_converse.run_nmr_workchain:main',
+        ],
         'aiida.calculations': [
             'qeconverse = aiida_qe_converse.calculations.qeconverse:QeConverseCalculation',
         ],
