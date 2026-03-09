@@ -15,10 +15,13 @@ setup(
     install_requires=[
         'aiida-core>=2.0.0',
         'aiida-quantumespresso>=4.0.0',
+        'aiida-pseudo',
+        'numpy',
+        'ase',
     ],
     entry_points={
         'console_scripts': [
-            'nmr-converse = aiida_qe_converse.run_nmr_workchain:main',
+            'nmr-converse = aiida_qe_converse.run_nmr_workchain:cli',
         ],
         'aiida.calculations': [
             'qeconverse = aiida_qe_converse.calculations.qeconverse:QeConverseCalculation',

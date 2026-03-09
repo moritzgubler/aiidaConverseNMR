@@ -1,22 +1,16 @@
 """
-Example script for running the NMR converse WorkChain.
+CLI for submitting and retrieving NMR converse WorkChain calculations.
 
-This script demonstrates the recommended get_builder_from_protocol method,
-which automatically sets up all parameters based on a protocol ('fast', 'moderate', 'precise').
+Installed as `nmr-converse` via the console_scripts entry point.
 
-This script shows how to:
-1. Set up the necessary codes in AiiDA
-2. Prepare the structure
-3. Use get_builder_from_protocol to automatically configure parameters
-4. Submit the workchain
-5. Retrieve results
+Usage:
+  nmr-converse --input structure.extxyz [options]
+  nmr-converse --retrieve <PK>
 
-Before running this script, make sure:
+Before running, make sure:
 - AiiDA is installed and configured
-- You have set up your codes (pw.x and qe-converse.x) in AiiDA
-- You have pseudopotentials loaded in a family (e.g., 'gipaw')
-
-For manual parameter setup (legacy approach), see main_manual() function below.
+- pw.x and qe-converse.x codes are set up in AiiDA
+- GIPAW pseudopotentials are loaded (e.g. group 'gipaw_PBE')
 """
 
 from aiida import orm, load_profile
@@ -271,7 +265,7 @@ def retrieve_results(workchain_pk):
         json.dump(combined_results, f, indent=2)
     print(f"\nResults exported to: {output_file}")
 
-if __name__ == '__main__':
+def cli():
     import argparse
 
     parser = argparse.ArgumentParser(
@@ -361,3 +355,7 @@ if __name__ == '__main__':
         workchain = main(args.input, args.protocol, args.pseudo_family, args.target_atoms,
                          args.spin_polarized, magnetic_moments, args.smearing_type, args.smearing_degauss,
                          args.npool)
+
+
+if __name__ == '__main__':
+    cli()

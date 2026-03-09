@@ -316,7 +316,6 @@ class NmrConverseWorkChain(WorkChain):
                 'num_mpiprocs_per_machine': proto['num_mpiprocs_per_machine'],
             },
             'max_wallclock_seconds': proto['max_wallclock_seconds'],
-            'max_memory_kb': proto['max_memory_kb'],
         }
 
         # Add queue_name if provided in overrides or kwargs
