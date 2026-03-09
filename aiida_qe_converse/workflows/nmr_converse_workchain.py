@@ -38,6 +38,8 @@ def _compute_optimal_npool(target_procs, num_kpoints, num_machines=1, tolerance=
     max_total = int(target_procs * (1 + tolerance))
 
     for nk in range(min(num_kpoints, max_total), 0, -1):
+        if num_kpoints % nk != 0:
+            continue
         lcm = nk * num_machines // gcd(nk, num_machines)
         lo = ((min_total + lcm - 1) // lcm) * lcm  # smallest multiple of lcm >= min_total
         if lo > max_total:
