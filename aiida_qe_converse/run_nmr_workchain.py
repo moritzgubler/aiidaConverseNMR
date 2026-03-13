@@ -25,7 +25,7 @@ load_profile()
 
 def main(inputfileName: str, protocol: str = 'moderate', pseudo_family='gipaw_PBE', target_atoms=None,
          spin_polarized=False, initial_magnetic_moments=None, smearing_type=None, smearing_degauss=None,
-         npool=0):
+         npool=0, pw_code_label='qe-7.5@merlin', converse_code_label='qe-converse-7.5@merlin'):
     """
     Main function to submit the NMR converse workchain.
 
@@ -33,13 +33,9 @@ def main(inputfileName: str, protocol: str = 'moderate', pseudo_family='gipaw_PB
     """
     print("Setting up NMR converse calculation...")
 
-    allowed_pseudofamilies =["gipaw_PBE", "gipaw_PBEsol"]
-    if pseudo_family not in allowed_pseudofamilies:
-        raise ValueError("Pseudofamily not allowed. Given pseudo_family: " + pseudo_family)
-
     # 1. Define codes
-    pw_code = orm.load_code('qe-7.5@merlin')
-    converse_code = orm.load_code('qe-converse-7.5@merlin')
+    pw_code = orm.load_code(pw_code_label)
+    converse_code = orm.load_code(converse_code_label)
     print(f"Using pw.x code: {pw_code.label}")
     print(f"Using qe-converse code: {converse_code.label}")
 
@@ -293,9 +289,8 @@ def cli():
     parser.add_argument(
         '--pseudo-family', '-f',
         type=str,
-        choices=['gipaw_PBE', 'gipaw_PBEsol'],
         default='gipaw_PBE',
-        help="Pseudopotential family (default: 'gipaw_PBE')"
+        help="AiiDA pseudopotential family label (default: 'gipaw_PBE')"
     )
     parser.add_argument(
         '--target-atoms', '-t',
@@ -341,6 +336,20 @@ def cli():
         help='Number of k-point pools for converse calculations (-nk). '
              '0 = auto-determine from k-mesh and MPI count (default).'
     )
+    parser.add_argument(
+        '--pw-code',
+        type=str,
+        default='qe-7.5@merlin',
+        metavar='CODE',
+        help="AiiDA label for the pw.x code (default: 'qe-7.5@merlin')"
+    )
+    parser.add_argument(
+        '--converse-code',
+        type=str,
+        default='qe-converse-7.5@merlin',
+        metavar='CODE',
+        help="AiiDA label for the qe-converse.x code (default: 'qe-converse-7.5@merlin')"
+    )
     args = parser.parse_args()
 
     if args.retrieve:
@@ -354,7 +363,7 @@ def cli():
             magnetic_moments = json.loads(args.magnetic_moments)
         workchain = main(args.input, args.protocol, args.pseudo_family, args.target_atoms,
                          args.spin_polarized, magnetic_moments, args.smearing_type, args.smearing_degauss,
-                         args.npool)
+                         args.npool, args.pw_code, args.converse_code)
 
 
 if __name__ == '__main__':
