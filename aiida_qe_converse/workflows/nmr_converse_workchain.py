@@ -428,15 +428,18 @@ class NmrConverseWorkChain(WorkChain):
         self.ctx.scf_options = scf_opts
 
         converse_opts = dict(opts)
-        converse_opts['resources'] = dict(res)
-        converse_opts['resources']['num_mpiprocs_per_machine'] = self.ctx.converse_mpiprocs_per_machine
-        converse_opts['max_memory_kb'] = int(_NODE_MEMORY_KB * self.ctx.converse_mpiprocs_per_machine / _NODE_CORES)
+        total_procs = self.ctx.converse_mpiprocs_per_machine * num_machines
+        converse_opts['resources'] = {'tot_num_mpiprocs': total_procs}
+        converse_opts.pop('max_memory_kb', None)
+        mem_per_cpu_kb = _NODE_MEMORY_KB // _NODE_CORES
+        existing = converse_opts.get('prepend_text', '')
+        converse_opts['prepend_text'] = (existing + f'\n#SBATCH --mem-per-cpu={mem_per_cpu_kb}').lstrip()
         self.ctx.converse_options = converse_opts
 
         self.report(f'--- Resources ---')
         self.report(f'  Machines           : {num_machines}')
         self.report(f'  MPI procs/machine  : {target_mpiprocs} (SCF, {scf_opts["max_memory_kb"] / 1e6:.1f} GB)')
-        self.report(f'  MPI procs/machine  : {self.ctx.converse_mpiprocs_per_machine} (converse, {converse_opts["max_memory_kb"] / 1e6:.1f} GB)')
+        self.report(f'  MPI procs total    : {total_procs} (converse)')
         self.report(f'  K-point pools (-nk): {self.ctx.converse_npool} [{auto_str}]')
         self.report(f'  Max wallclock      : {opts.get("max_wallclock_seconds")} s')
         queue = opts.get("queue_name")
