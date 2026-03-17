@@ -23,9 +23,29 @@ from ase.io import read
 load_profile()
 
 
+CLUSTER_HARDWARE = {
+    'merlin':    {'node_cores': 128, 'node_memory_kb': 490_000_000},
+    'daint':     {'node_cores':  72, 'node_memory_kb': 100_000_000},
+    'localhost': {'node_cores':  14, 'node_memory_kb': 200_000_000},
+}
+
+PROTOCOL_NODE_FRACTION = {
+    'fast':     0.25,
+    'moderate': 1.0,
+    'precise':  1.0,
+}
+
+PROTOCOL_NUM_MACHINES = {
+    'fast':     1,
+    'moderate': 1,
+    'precise':  2,
+}
+
+
 def main(inputfileName: str, protocol: str = 'moderate', pseudo_family='gipaw_PBE', target_atoms=None,
          spin_polarized=False, initial_magnetic_moments=None, smearing_type=None, smearing_degauss=None,
-         npool=0, pw_code_label='qe-7.5@merlin', converse_code_label='qe-converse-7.5@merlin'):
+         npool=0, pw_code_label='qe-7.5@merlin', converse_code_label='qe-converse-7.5@merlin',
+         cluster='merlin'):
     """
     Main function to submit the NMR converse workchain.
 
@@ -48,19 +68,30 @@ def main(inputfileName: str, protocol: str = 'moderate', pseudo_family='gipaw_PB
     # 3. Get builder from protocol (NEW METHOD)
     from aiida_qe_converse.workflows.nmr_converse_workchain import NmrConverseWorkChain
 
+    hw = CLUSTER_HARDWARE[cluster]
+    fraction = PROTOCOL_NODE_FRACTION[protocol]
+    max_memory_kb = int(hw['node_memory_kb'] * fraction)
+    num_machines = PROTOCOL_NUM_MACHINES[protocol]
+    num_mpiprocs_per_machine = int(hw['node_cores'] * fraction)
+
     builder = NmrConverseWorkChain.get_builder_from_protocol(
         pw_code=pw_code,
         converse_code=converse_code,
         structure=structure,
-        protocol=protocol,  # Options: 'fast', 'moderate', 'precise'
+        protocol=protocol,
         pseudo_family=pseudo_family,
-        target_atoms=target_atoms,  # None = all atoms, or provide list like [0, 1, 2]
+        target_atoms=target_atoms,
         spin_polarized=spin_polarized,
         initial_magnetic_moments=initial_magnetic_moments,
         smearing_type=smearing_type,
         smearing_degauss=smearing_degauss,
         npool=npool,
-        queue_name='daily',  # Optional: specify queue name
+        queue_name='daily',
+        overrides={
+            'max_memory_kb': max_memory_kb,
+            'num_machines': num_machines,
+            'num_mpiprocs_per_machine': num_mpiprocs_per_machine,
+        },
     )
 
     # Optional: Override specific parameters if needed
@@ -331,10 +362,17 @@ def cli():
     parser.add_argument(
         '--npool', '-n',
         type=int,
-        default=0,
+        default=8,
         metavar='N',
         help='Number of k-point pools for converse calculations (-nk). '
-             '0 = auto-determine from k-mesh and MPI count (default).'
+             'Must divide total MPI count. (default: 8)'
+    )
+    parser.add_argument(
+        '--cluster', '-c',
+        type=str,
+        choices=list(CLUSTER_HARDWARE.keys()),
+        default='merlin',
+        help="Target cluster (default: 'merlin')"
     )
     parser.add_argument(
         '--pw-code',
@@ -363,7 +401,7 @@ def cli():
             magnetic_moments = json.loads(args.magnetic_moments)
         workchain = main(args.input, args.protocol, args.pseudo_family, args.target_atoms,
                          args.spin_polarized, magnetic_moments, args.smearing_type, args.smearing_degauss,
-                         args.npool, args.pw_code, args.converse_code)
+                         args.npool, args.pw_code, args.converse_code, args.cluster)
 
 
 if __name__ == '__main__':

@@ -88,7 +88,7 @@ class NmrConverseWorkChain(WorkChain):
         spec.input('electronic_type', valid_type=orm.Str, required=False, default=lambda: orm.Str('METAL'),
                    help='Electronic type: METAL, INSULATOR, or UNKNOWN (default: METAL)')
         spec.input('npool', valid_type=orm.Int, required=False, default=lambda: orm.Int(8),
-                   help='Number of k-point pools for converse (-nk flag). Must divide total MPI count.')
+                   help='Number of k-point pools for converse (-nk flag). Must divide total MPI count. Default: 8.')
         spec.input('spin_polarized', valid_type=orm.Bool, required=False, default=lambda: orm.Bool(False),
                    help='Whether to perform a spin-polarized (nspin=2) collinear calculation')
         spec.input('initial_magnetic_moments', valid_type=orm.Dict, required=False,
@@ -179,10 +179,9 @@ class NmrConverseWorkChain(WorkChain):
                 'mixing_beta': 0.3,
                 'q_gipaw': 0.01,
                 'num_machines': 1,
-                'num_mpiprocs_per_machine': 16,
+                'num_mpiprocs_per_machine': 32,
                 'npool': 8,
-                'node_cores': 128,
-                'node_memory_kb': 490_000_000,
+                'max_memory_kb': 122_500_000,
                 'max_wallclock_seconds': 3600 * 23,
             },
             'moderate': {
@@ -196,8 +195,7 @@ class NmrConverseWorkChain(WorkChain):
                 'num_machines': 1,
                 'num_mpiprocs_per_machine': 128,
                 'npool': 16,
-                'node_cores': 128,
-                'node_memory_kb': 490_000_000,
+                'max_memory_kb': 490_000_000,
                 'max_wallclock_seconds': 3600 * 23,
             },
             'precise': {
@@ -211,8 +209,7 @@ class NmrConverseWorkChain(WorkChain):
                 'num_machines': 2,
                 'num_mpiprocs_per_machine': 128,
                 'npool': 16,
-                'node_cores': 128,
-                'node_memory_kb': 490_000_000,
+                'max_memory_kb': 490_000_000,
                 'max_wallclock_seconds': 3600 * 23,
             }
         }
@@ -293,7 +290,7 @@ class NmrConverseWorkChain(WorkChain):
                 'num_mpiprocs_per_machine': proto['num_mpiprocs_per_machine'],
             },
             'max_wallclock_seconds': proto['max_wallclock_seconds'],
-            'max_memory_kb': proto['node_memory_kb'] * proto['num_mpiprocs_per_machine'] // proto['node_cores'],
+            'max_memory_kb': proto['max_memory_kb'],
         }
 
         # Add queue_name if provided in overrides or kwargs
@@ -320,7 +317,7 @@ class NmrConverseWorkChain(WorkChain):
         builder.mixing_beta = orm.Float(proto['mixing_beta'])
         builder.dudk_method = orm.Str(kwargs.get('dudk_method', 'covariant'))
         builder.dudk_in_memory = orm.Bool(kwargs.get('dudk_in_memory', True))
-        builder.npool = orm.Int(kwargs.get('npool', proto['npool']))
+        builder.npool = orm.Int(kwargs.get('npool') or proto['npool'])
         builder.electronic_type = orm.Str(electronic_type.value)
         builder.spin_polarized = orm.Bool(spin_polarized)
         if initial_magnetic_moments is not None:
