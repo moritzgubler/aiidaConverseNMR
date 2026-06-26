@@ -40,9 +40,53 @@ The `get_builder_from_protocol()` class method configures everything from a prot
 ## AiiDA entry points (setup.py)
 
 ```
-aiida.calculations: qeconverse -> QeConverseCalculation
-aiida.parsers:      qeconverse -> QeConverseParser
+aiida.calculations:    qeconverse -> QeConverseCalculation
+                       qeefg      -> QeEfgCalculation
+aiida.parsers:         qeconverse -> QeConverseParser
+                       qeefg      -> QeEfgParser
+aiida.workflows:       qeconverse.nmr_converse    -> NmrConverseWorkChain
+                       qeconverse.qeconverse_base -> QeConverseBaseWorkChain
+                       qeconverse.efg             -> EfgWorkChain
+                       qeconverse.qeefg_base      -> QeEfgBaseWorkChain
+aiidalab_qe.properties: qeconverse -> aiida_qe_converse.app:property      (NMR GUI)
+                        qeefg      -> aiida_qe_converse.app_efg:property   (EFG GUI)
 ```
+
+## EFG (electric field gradient) workflow
+
+`EfgWorkChain` (`qeconverse.efg`) computes EFG tensors and NMR/NQR quadrupolar
+parameters (`Cq`, `η`, `ν_Q`) via the standalone `qe-efg.x` driver. Unlike NMR,
+the EFG is a **pure ground-state property**: a single SCF (symmetry left ON) plus
+**one** `qe-efg.x` run returns the full 3x3 tensor for all atoms — no per-atom /
+per-direction loop, no tensor assembly. Outline: `setup -> run_scf ->
+inspect_scf -> run_efg -> inspect_efg -> compute_results ->
+maybe_compute_spectra -> finalize`.
+
+Key EFG conventions:
+
+- **Namelist** is `&input_qeefg` with `prefix`, `outdir`, `q_efg(n)`, `i_efg(n)`.
+  `prefix`/`outdir` match the SCF; the SCF `out/` is symlinked exactly like the
+  converse calc.
+- **`q_efg`/`i_efg` are per ATOM TYPE (species)**, in the order
+  aiida-quantumespresso writes `ATOMIC_SPECIES`, which is the **alphabetical sort
+  of kind names**. `data/nuclear.py::build_efg_arrays()` reproduces that ordering;
+  getting it wrong attaches Q/I to the wrong element. `q_efg` is in units of
+  `1e-30 m²` (= 10 mbarn); `Q = 0` skips `Cq`; `ν_Q` needs `I ≥ 1`.
+- **Symmetry stays ON** for the EFG SCF (do NOT reuse an NMR converse SCF, which
+  needs `nosym/noinv/nspin=2`). `qe-efg.x` symmetrises via `symtensor`.
+- **Parser** (`parsers/efg_parsing.py`, AiiDA-independent core) extracts the
+  symmetrized tensor, principal values/eigenvectors, `η`, `Cq`, `ν_Q`. Atoms are
+  keyed by 1-based sequential index. `Cq`/`η`/`ν_Q` are parsed (already in MHz)
+  rather than recomputed; the raw symmetrized tensor (Ha/bohr²) is also stored.
+- **Nuclear data**: built-in default `Q`/`I` table in `data/nuclear.py`, with a
+  user `nuclear_data` override (Dict keyed by element or kind name).
+- **Optional spectrum**: `postprocessing/quadrupolar_spectrum.py` simulates a
+  powder quadrupolar NMR spectrum (thesis eqs 2.28–2.33); gated behind
+  `compute_spectra` + `larmor_frequency`, kept separate from the core outputs.
+- **Shared helpers**: `workflows/common.py` holds the pseudo lookup, protocol
+  table, SCF-parameter and options builders used by both `NmrConverseWorkChain`
+  and `EfgWorkChain`. The atom-selection GUI panel lives in
+  `app_common/atom_selection.py` and is subclassed by both GUI plugins.
 
 ## Dependencies
 
@@ -62,8 +106,11 @@ aiida.parsers:      qeconverse -> QeConverseParser
 | 330 | CalcJob | Incomplete output |
 | 300 | BaseRestart | Unrecoverable failure (CRASH file) |
 | 300 | WorkChain | SCF failed |
-| 301 | WorkChain | Converse calculation(s) failed |
+| 301 | WorkChain | Converse calculation(s) failed (NMR) / EFG calc failed (EFG) |
 | 302 | WorkChain | Parsing/tensor assembly failed |
+
+EFG CalcJob (`QeEfgCalculation`) reuses the same 300/310/320/330 exit-code
+layout as the converse CalcJob.
 
 ## Common modifications
 
