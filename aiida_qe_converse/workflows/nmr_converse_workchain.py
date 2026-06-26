@@ -14,6 +14,7 @@ from aiida.engine import WorkChain, ToContext, calcfunction
 from aiida_quantumespresso.workflows.pw.base import PwBaseWorkChain
 from aiida_quantumespresso.common.types import ElectronicType
 from .qeconverse_base import QeConverseBaseWorkChain
+from . import common
 import numpy as np
 
 
@@ -207,55 +208,16 @@ class NmrConverseWorkChain(WorkChain):
         if overrides:
             proto.update(overrides)
 
-        # Get pseudopotentials
-        pseudos = {}
-        for kind in structure.get_kind_names():
-            qb = QueryBuilder()
-            qb.append(Group, filters={'label': pseudo_family}, tag='group')
-            # qb.append(orm.UpfData, with_group='group',
-            #           filters={'attributes.element': kind})
-            from aiida_pseudo.data.pseudo.upf import UpfData
-            qb.append(UpfData, with_group='group',
-                    filters={'attributes.element': kind})
-
-            results = qb.all()
-
-            if results:
-                pseudos[kind] = results[0][0].pk
-            else:
-                raise ValueError(f"No pseudo found for element {kind} in family '{pseudo_family}'")
+        # Get pseudopotentials (shared lookup, by element symbol of each kind)
+        pseudos = common.lookup_pseudos(structure, pseudo_family)
 
         # Handle electronic type - default to METAL if not specified
-        if electronic_type is None:
-            electronic_type = ElectronicType.METAL
-        elif isinstance(electronic_type, str):
-            electronic_type = ElectronicType(electronic_type)
+        electronic_type = common.resolve_electronic_type(electronic_type)
 
-        # Set degauss based on electronic type
-        if electronic_type == ElectronicType.INSULATOR:
-            degauss = 1e-8
-        else:  # METAL or UNKNOWN
-            degauss = proto["degauss"]
-        # Prepare SCF parameters
-        scf_parameters = {
-            'CONTROL': {
-                'calculation': 'scf',
-                'restart_mode': 'from_scratch',
-                'verbosity': 'high',
-            },
-            'SYSTEM': {
-                'ecutwfc': proto['ecutwfc'],
-                'occupations': 'smearing',
-                'smearing': 'fermi-dirac',
-                'degauss': degauss,
-                'nosym': True,  # CRITICAL: Disable symmetry for NMR
-                'noinv': True,  # CRITICAL: Disable inversion symmetry
-            },
-            'ELECTRONS': {
-                'conv_thr': proto['conv_thr'],
-                'mixing_beta': proto['mixing_beta'],
-            },
-        }
+        # Prepare SCF parameters; nosym/noinv are CRITICAL for the NMR converse SCF
+        scf_parameters = common.build_scf_parameters(
+            proto, electronic_type=electronic_type, nosym=True, noinv=True
+        )
 
         # Prepare converse parameters
         converse_parameters = {
