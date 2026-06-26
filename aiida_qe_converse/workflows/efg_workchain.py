@@ -275,7 +275,7 @@ class EfgWorkChain(WorkChain):
             return self.exit_codes.ERROR_PARSING_FAILED
 
         results = collect_efg_results(
-            efg_output, self.inputs.structure, orm.List(list=self.ctx.target_atoms)
+            efg_output, self.inputs.structure, self.inputs.target_atoms
         )
         self.out('efg_tensors', results['efg_tensors'])
         self.out('quadrupolar_parameters', results['quadrupolar_parameters'])
