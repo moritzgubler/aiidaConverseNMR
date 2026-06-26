@@ -25,16 +25,21 @@ setup(
         ],
         'aiida.calculations': [
             'qeconverse = aiida_qe_converse.calculations.qeconverse:QeConverseCalculation',
+            'qeefg = aiida_qe_converse.calculations.qeefg:QeEfgCalculation',
         ],
         'aiida.parsers': [
             'qeconverse = aiida_qe_converse.parsers.qeconverse:QeConverseParser',
+            'qeefg = aiida_qe_converse.parsers.qeefg:QeEfgParser',
         ],
         'aiida.workflows': [
             'qeconverse.nmr_converse = aiida_qe_converse.workflows.nmr_converse_workchain:NmrConverseWorkChain',
             'qeconverse.qeconverse_base = aiida_qe_converse.workflows.qeconverse_base:QeConverseBaseWorkChain',
+            'qeconverse.efg = aiida_qe_converse.workflows.efg_workchain:EfgWorkChain',
+            'qeconverse.qeefg_base = aiida_qe_converse.workflows.efg_base:QeEfgBaseWorkChain',
         ],
         'aiidalab_qe.properties': [
             "qeconverse = aiida_qe_converse.app:property",
+            "qeefg = aiida_qe_converse.app_efg:property",
         ]
     },
 )
