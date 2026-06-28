@@ -14,8 +14,13 @@ from traitlets import List, Dict, observe
 class AtomSelectionConfigModel(ConfigurationSettingsModel, HasInputStructure):
     """Configuration model holding a per-site selection over the structure."""
 
+    # In current aiidalab-qe, ``HasInputStructure`` exposes the *trait*
+    # ``structure_uuid`` (``input_structure`` is a derived property). The
+    # dependency system dlinks traits, so we depend on / observe
+    # ``structure_uuid`` and resolve the node via the ``input_structure``
+    # property.
     dependencies = [
-        "input_structure",
+        "structure_uuid",
     ]
 
     # List of selected atom indices (0-based).
@@ -25,10 +30,10 @@ class AtomSelectionConfigModel(ConfigurationSettingsModel, HasInputStructure):
     # [(index, element, kind_name), ...]
     atom_info = List([])
 
-    @observe("input_structure")
-    def _on_input_structure_change(self, change):
+    @observe("structure_uuid")
+    def _on_input_structure_change(self, change=None):
         """Rebuild the atom list when the structure changes."""
-        structure = change.get("new") if isinstance(change, dict) else change["new"]
+        structure = self.input_structure
 
         if structure is None:
             self.atom_info = []
@@ -52,9 +57,11 @@ class AtomSelectionConfigModel(ConfigurationSettingsModel, HasInputStructure):
         self.target_atoms = [idx for idx, selected in self.atom_selection.items() if selected]
 
     def get_model_state(self):
+        # Only the plugin's own selection traits; structure_uuid/locked/blockers
+        # are framework-managed and must not be part of the saved state.
         return {
-            k: getattr(self, k) for k, v in self.traits().items()
-            if k != "input_structure"
+            k: getattr(self, k)
+            for k in ("target_atoms", "atom_selection", "atom_info")
         }
 
     def set_model_state(self, parameters):

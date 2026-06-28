@@ -60,19 +60,33 @@ PROTOCOLS = {
 }
 
 
+# aiidalab-qe's global protocol selector uses the names fast/balanced/stringent.
+# Accept those as aliases of our fast/moderate/precise table so the GUI works
+# without a separate per-plugin protocol control.
+PROTOCOL_ALIASES = {
+    'balanced': 'moderate',
+    'stringent': 'precise',
+}
+
+
 def get_protocol(name, overrides=None):
     """Return a copy of the protocol dictionary, applying ``overrides`` if given.
 
     Args:
-        name: one of ``fast``, ``moderate``, ``precise``.
+        name: one of ``fast``, ``moderate``, ``precise`` (the aiidalab-qe names
+            ``balanced``/``stringent`` are accepted as aliases).
         overrides: optional dict merged on top of the protocol values.
 
     Returns:
         A fresh dict (safe to mutate by the caller).
     """
-    if name not in PROTOCOLS:
-        raise ValueError(f"Unknown protocol '{name}'. Choose from: {list(PROTOCOLS.keys())}")
-    proto = dict(PROTOCOLS[name])
+    resolved = PROTOCOL_ALIASES.get(name, name)
+    if resolved not in PROTOCOLS:
+        raise ValueError(
+            f"Unknown protocol '{name}'. Choose from: "
+            f"{list(PROTOCOLS.keys())} (aliases: {list(PROTOCOL_ALIASES.keys())})"
+        )
+    proto = dict(PROTOCOLS[resolved])
     if overrides:
         proto.update(overrides)
     return proto
