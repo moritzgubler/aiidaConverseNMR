@@ -118,3 +118,21 @@ layout as the converse CalcJob.
 - **Change SCF parameters**: modify protocol dicts in `get_builder_from_protocol()` or pass `overrides` dict
 - **Change converse parameters**: modify `run_converse_calculations()` where `params` dict is built
 - **Add new parser output**: extend `QeConverseParser._parse_output()` and update `compute_results()` in the workchain
+
+## Deployment
+
+`docker/` is the canonical, self-deployable container: an AiiDAlab image with the plugin, an
+**MPI** Quantum ESPRESSO 7.5 build and `qe-converse`/`qe-efg`, plus auto-registration of codes and
+GIPAW pseudos. `cd docker && docker compose up -d` (see `docker/README.md`). The dev override
+`docker-compose.dev.yml` bind-mounts the source for live editing. Base image and `qe-converse`
+commit are pinned (the base is an unmerged aiidalab PR image — Python 3.12 / aiida-quantumespresso
+>=4.17 — until a stable release ships that stack).
+
+## Provisioning CLI
+
+`aiida-qe-converse-setup` (entry point `aiida_qe_converse.provision:cli`) registers the codes and
+imports the GIPAW pseudo groups idempotently against the active profile (`pseudos` and `codes`
+subcommands). It is what the Docker startup hook calls, and is reusable on any AiiDA profile. The
+pure helpers `discover_pseudo_families()` / `default_pseudo_dir()` are unit-tested
+(`tests/test_provision.py`). Pseudo dir resolves from `--pseudo-dir`,
+`$AIIDA_QE_CONVERSE_PSEUDO_DIR`, `/opt/aiida-qe-converse/pseudos`, then the repo `pseudos/`.

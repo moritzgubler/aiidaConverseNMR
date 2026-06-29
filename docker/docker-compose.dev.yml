@@ -1,0 +1,9 @@
+# Development override: bind-mount the plugin source over the editable install so
+# edits take effect after restarting the app kernel (no image rebuild).
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+services:
+  aiidalab:
+    volumes:
+      - ..:/opt/aiida-qe-converse
