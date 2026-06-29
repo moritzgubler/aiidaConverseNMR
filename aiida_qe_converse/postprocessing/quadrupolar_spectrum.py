@@ -55,18 +55,19 @@ def _AB(eta, theta, phi):
     return A, B
 
 
-def _quadrupolar_shift(m, nu_Q, eta, spin_I, nu_L, theta, phi):
+def _quadrupolar_shift(m, nu_Q, eta, spin_I, nu_L, theta, phi, second_order=True):
     """First- and second-order quadrupolar shifts for transition |m-1> -> |m>.
 
     Implements eqs 2.28 (``nu1``) and 2.29 (``nu2``); ``theta``/``phi`` (the
     field direction in the EFG principal-axis frame) may be scalars or numpy
-    arrays. Returns ``(nu1, nu2)`` in MHz.
+    arrays. ``second_order=False`` zeroes the 2.29 term. Returns ``(nu1, nu2)``
+    in MHz.
     """
     sin2 = np.sin(theta) ** 2
     cos2 = np.cos(theta) ** 2
     cos2phi = np.cos(2.0 * phi)
     nu1 = 0.25 * nu_Q * (1.0 - 2.0 * m) * (3.0 * cos2 - 1.0 + eta * sin2 * cos2phi)
-    if nu_L != 0.0:
+    if second_order and nu_L != 0.0:
         A, B = _AB(eta, theta, phi)
         II1 = spin_I * (spin_I + 1.0)
         mm1 = m * (m - 1.0)
@@ -84,20 +85,21 @@ def transition_weight(m, spin_I):
     return spin_I * (spin_I + 1.0) - m * (m - 1.0)
 
 
-def single_crystal_lines(nu_Q, eta, spin_I, nu_L, theta, phi):
+def single_crystal_lines(nu_Q, eta, spin_I, nu_L, theta, phi, second_order=True):
     """Transition line positions for a single crystal orientation (theta, phi).
 
     Returns a list of ``(frequency_MHz, intensity, m)`` tuples, one per
     transition |m-1> -> |m>, using eqs 2.28+2.29+2.32 for the frequency and
     eq 2.33 for the intensity. ``theta``/``phi`` are the polar/azimuthal angles
-    of the field in the EFG principal-axis frame (radians).
+    of the field in the EFG principal-axis frame (radians). Set
+    ``second_order=False`` to keep only the first-order shift (eq 2.28).
     """
     spin_I = float(spin_I)
     if spin_I < 1.0:
         raise ValueError('Quadrupolar spectrum requires I >= 1')
     lines = []
     for m in _transition_m_values(spin_I):
-        nu1, nu2 = _quadrupolar_shift(m, nu_Q, eta, spin_I, nu_L, theta, phi)
+        nu1, nu2 = _quadrupolar_shift(m, nu_Q, eta, spin_I, nu_L, theta, phi, second_order)
         lines.append((float(nu_L + nu1 + nu2), float(transition_weight(m, spin_I)), float(m)))
     return lines
 
@@ -198,7 +200,7 @@ def orientation_sampling(method='grid', n_theta=200, n_phi=200, lebedev_order=53
 def powder_spectrum(nu_Q, eta, spin_I, nu_L,
                     n_theta=200, n_phi=200, n_bins=1000,
                     freq_window=None, broadening=None,
-                    method='grid', lebedev_order=53):
+                    method='grid', lebedev_order=53, second_order=True):
     """Simulate a powder quadrupolar NMR spectrum.
 
     Args:
@@ -228,7 +230,7 @@ def powder_spectrum(nu_Q, eta, spin_I, nu_L,
     all_freqs = []
     all_weights = []
     for m in _transition_m_values(spin_I):
-        nu1, nu2 = _quadrupolar_shift(m, nu_Q, eta, spin_I, nu_L, theta_f, phi_f)
+        nu1, nu2 = _quadrupolar_shift(m, nu_Q, eta, spin_I, nu_L, theta_f, phi_f, second_order)
         nu = nu_L + nu1 + nu2  # (2.32)
         weight = ori_w * transition_weight(m, spin_I)  # solid angle x (2.33)
         all_freqs.append(nu)
