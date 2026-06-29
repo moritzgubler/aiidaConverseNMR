@@ -28,6 +28,7 @@ class EFGConfigurationSettingPanel(AtomSelectionConfigPanel):
             self._model._on_input_structure_change({"new": self._model.input_structure})
 
         atom_selection_container = self._render_atom_selection()
+        pseudo_container = self._render_pseudo_section()
         nuclear_data_container = self._render_nuclear_data()
 
         # rebuild the Q/I table whenever the structure (atom_info) changes
@@ -35,6 +36,7 @@ class EFGConfigurationSettingPanel(AtomSelectionConfigPanel):
 
         self.children = [
             atom_selection_container,
+            pseudo_container,
             nuclear_data_container,
         ]
 

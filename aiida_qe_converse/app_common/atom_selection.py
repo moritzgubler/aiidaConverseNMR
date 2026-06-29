@@ -8,7 +8,7 @@ add their own extra traits; the EFG panel adds the Q/I override widget on top).
 import ipywidgets as ipw
 from aiidalab_qe.common.panel import ConfigurationSettingsModel, ConfigurationSettingsPanel
 from aiidalab_qe.common.mixins import HasInputStructure
-from traitlets import List, Dict, observe
+from traitlets import List, Dict, Unicode, observe
 
 
 class AtomSelectionConfigModel(ConfigurationSettingsModel, HasInputStructure):
@@ -29,6 +29,9 @@ class AtomSelectionConfigModel(ConfigurationSettingsModel, HasInputStructure):
     atom_selection = Dict({})
     # [(index, element, kind_name), ...]
     atom_info = List([])
+    # GIPAW pseudopotential library/functional (group label). EFG/NMR require
+    # GIPAW pseudos, so the standard aiidalab-qe pseudo selection is not used.
+    pseudo_family = Unicode("gipaw_PBE")
 
     @observe("structure_uuid")
     def _on_input_structure_change(self, change=None):
@@ -61,7 +64,7 @@ class AtomSelectionConfigModel(ConfigurationSettingsModel, HasInputStructure):
         # are framework-managed and must not be part of the saved state.
         return {
             k: getattr(self, k)
-            for k in ("target_atoms", "atom_selection", "atom_info")
+            for k in ("target_atoms", "atom_selection", "atom_info", "pseudo_family")
         }
 
     def set_model_state(self, parameters):
@@ -195,3 +198,70 @@ class AtomSelectionConfigPanel(ConfigurationSettingsPanel):
         else:
             msg = f"<p style='color: #007bff; margin-top: 10px;'><strong>{num_selected} of {num_total} atoms selected</strong></p>"
         self.selection_summary.value = msg
+
+    # ---------------- GIPAW pseudopotential selection ----------------
+
+    def _render_pseudo_section(self):
+        """Render the GIPAW pseudopotential note + library selector + preview."""
+        from ..workflows.common import list_gipaw_pseudo_families
+
+        note = ipw.HTML(
+            "<h4>Pseudopotentials (GIPAW)</h4>"
+            "<p>EFG / NMR calculations <b>require GIPAW</b> norm-conserving "
+            "pseudopotentials (with reconstruction data). The pseudopotential "
+            "family chosen in the <i>Advanced</i> step is <b>not used</b> here — "
+            "the GIPAW library selected below is used instead.</p>"
+        )
+
+        families = list_gipaw_pseudo_families() or ["gipaw_PBE", "gipaw_PBEsol"]
+        labels = {"gipaw_PBE": "GIPAW PBE (gipaw_PBE)",
+                  "gipaw_PBEsol": "GIPAW PBEsol (gipaw_PBEsol)"}
+        options = [(labels.get(f, f), f) for f in families]
+        current = self._model.pseudo_family if self._model.pseudo_family in families else families[0]
+
+        self._pseudo_family_dd = ipw.Dropdown(
+            options=options, value=current, description="GIPAW library:",
+            style={"description_width": "120px"})
+        ipw.link((self._pseudo_family_dd, "value"), (self._model, "pseudo_family"))
+
+        self._pseudo_preview = ipw.HTML()
+        self._pseudo_family_dd.observe(lambda c: self._update_pseudo_preview(), "value")
+        self._model.observe(lambda c: self._update_pseudo_preview(), "atom_info")
+        self._update_pseudo_preview()
+
+        return ipw.VBox([note, self._pseudo_family_dd, self._pseudo_preview])
+
+    def _update_pseudo_preview(self):
+        """Show which GIPAW pseudo each element resolves to (or flag missing)."""
+        structure = getattr(self._model, "input_structure", None)
+        if structure is None:
+            self._pseudo_preview.value = "<p><i>Load a structure to preview pseudopotentials.</i></p>"
+            return
+        from ..workflows.common import pseudo_status
+        try:
+            status = pseudo_status(structure, self._pseudo_family_dd.value)
+        except Exception as exc:  # pragma: no cover - depends on AiiDA profile
+            self._pseudo_preview.value = (
+                f"<p style='color:#dc3545;'>Could not query pseudopotentials: {exc}</p>")
+            return
+
+        rows = ""
+        missing = []
+        for element, filename in status.items():
+            if filename:
+                cell = f"<span style='color:#28a745;'>{filename}</span>"
+            else:
+                cell = "<span style='color:#dc3545;font-weight:bold;'>MISSING</span>"
+                missing.append(element)
+            rows += (f"<tr><td style='padding:4px 12px;border:1px solid #eee;'>{element}</td>"
+                     f"<td style='padding:4px 12px;border:1px solid #eee;'>{cell}</td></tr>")
+        html = ("<table style='border-collapse:collapse;margin-top:6px;'>"
+                "<tr style='background:#f0f0f0;'>"
+                "<th style='padding:4px 12px;border:1px solid #eee;'>Element</th>"
+                "<th style='padding:4px 12px;border:1px solid #eee;'>GIPAW pseudo</th></tr>"
+                + rows + "</table>")
+        if missing:
+            html += (f"<p style='color:#dc3545;margin-top:6px;'><b>No GIPAW pseudopotential "
+                     f"for: {', '.join(missing)}</b> in '{self._pseudo_family_dd.value}'. "
+                     f"The calculation will fail until these are provided.</p>")
+        self._pseudo_preview.value = html

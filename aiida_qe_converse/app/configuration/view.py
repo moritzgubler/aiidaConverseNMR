@@ -23,4 +23,5 @@ class NMRConfigurationSettingPanel(AtomSelectionConfigPanel):
 
         self.children = [
             self._render_atom_selection(),
+            self._render_pseudo_section(),
         ]

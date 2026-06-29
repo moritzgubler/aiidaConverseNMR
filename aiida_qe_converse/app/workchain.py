@@ -35,6 +35,7 @@ def get_builder(codes, structure, parameters, **kwargs):
     # dudk_method = parameters.get("dudk_method", "covariant")
 
     target_atoms = parameters["qeconverse"].get("target_atoms", None)
+    pseudo_family = parameters["qeconverse"].get("pseudo_family", "gipaw_PBE")
 
     # Get codes
     pw_code = codes.get("pw_nmr",{}).get("code",None)
@@ -46,6 +47,7 @@ def get_builder(codes, structure, parameters, **kwargs):
         converse_code=converse_code,
         structure=structure,
         protocol=protocol,
+        pseudo_family=pseudo_family,
         target_atoms=target_atoms,
         # overrides={
         #     "kpoints_distance": kpoints_distance,

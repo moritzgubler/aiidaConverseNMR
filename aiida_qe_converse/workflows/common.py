@@ -129,6 +129,39 @@ def lookup_pseudos(structure, pseudo_family):
     return pseudos
 
 
+def list_gipaw_pseudo_families():
+    """Return the labels of available GIPAW pseudo groups (``gipaw*``), sorted."""
+    from aiida.orm import QueryBuilder, Group
+    qb = QueryBuilder()
+    qb.append(Group, filters={'label': {'like': 'gipaw%'}}, project='label')
+    return sorted({row[0] for row in qb.all()})
+
+
+def pseudo_status(structure, pseudo_family):
+    """Non-raising per-element lookup for the GUI preview.
+
+    Returns a dict ``{element_symbol: filename_or_None}`` for the distinct
+    elements in ``structure``; ``None`` means no GIPAW pseudo is present for that
+    element in ``pseudo_family``.
+    """
+    from aiida.orm import QueryBuilder, Group
+    from aiida_pseudo.data.pseudo.upf import UpfData
+
+    elements = []
+    for kind in structure.kinds:
+        if kind.symbol not in elements:
+            elements.append(kind.symbol)
+
+    status = {}
+    for element in elements:
+        qb = QueryBuilder()
+        qb.append(Group, filters={'label': pseudo_family}, tag='group')
+        qb.append(UpfData, with_group='group', filters={'attributes.element': element})
+        match = qb.first()
+        status[element] = match[0].filename if match else None
+    return status
+
+
 def resolve_electronic_type(electronic_type):
     """Normalise ``electronic_type`` (str/enum/None) to an ``ElectronicType``."""
     if electronic_type is None:
