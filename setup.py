@@ -40,6 +40,9 @@ setup(
         'aiidalab_qe.properties': [
             "qeconverse = aiida_qe_converse.app:property",
             "qeefg = aiida_qe_converse.app_efg:property",
-        ]
+        ],
+        'console_scripts': [
+            'aiida-qe-converse-setup = aiida_qe_converse.provision:cli',
+        ],
     },
 )
