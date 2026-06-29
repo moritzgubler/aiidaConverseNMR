@@ -88,6 +88,7 @@ aiida-qe-converse-setup codes --computer localhost --with-mpi \
 # substitute. Force core.direct + a valid mpirun template with --oversubscribe
 # (so a single-node box can request more ranks than it has cores).
 python - <<'PY' || true
+import os
 from aiida import load_profile, orm
 try:
     load_profile()
@@ -99,8 +100,14 @@ try:
     if "{num_cpus}" in cmd or "--oversubscribe" not in cmd:
         c.set_mpirun_command(["mpirun", "-np", "{tot_num_mpiprocs}", "--oversubscribe"])
         print("[qe-converse] set localhost mpirun_command")
+    # The aiidalab image leaves default_mpiprocs_per_machine unset (None), which
+    # makes the QE app Resources panel crash (BoundedIntText max=None). Set it to
+    # the node's core count.
+    if c.get_default_mpiprocs_per_machine() is None:
+        c.set_default_mpiprocs_per_machine(os.cpu_count() or 4)
+        print("[qe-converse] set localhost default_mpiprocs_per_machine")
 except Exception as exc:
-    print(f"[qe-converse] localhost scheduler fix deferred: {exc}")
+    print(f"[qe-converse] localhost config fix deferred: {exc}")
 PY
 SH
 RUN chmod +x /usr/local/bin/before-notebook.d/90-register-qe-converse.sh
