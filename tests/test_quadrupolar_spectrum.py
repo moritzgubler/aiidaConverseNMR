@@ -177,3 +177,24 @@ def test_second_order_toggle():
     sat_on = single_crystal_lines(3.0, 0.0, 1.5, 1e6, 0.0, 0.0, second_order=True)
     sat_off = single_crystal_lines(3.0, 0.0, 1.5, 1e6, 0.0, 0.0, second_order=False)
     assert max(abs(a[0] - b[0]) for a, b in zip(sat_on, sat_off)) < 1e-3
+
+
+def test_powder_decomposition_sums_to_total():
+    import numpy as np
+    from aiida_qe_converse.postprocessing.quadrupolar_spectrum import (
+        powder_spectrum_by_transition, powder_spectrum)
+    c, per, total = powder_spectrum_by_transition(3.0, 0.2, 1.5, 10.0, n_bins=500,
+                                                  broadening=0.05)
+    # I=3/2 -> 3 transitions, each a curve on the same grid
+    assert len(per) == 3
+    assert all(h.shape == (500,) for _, h in per)
+    # per-transition curves add up to the total (shared normalisation)
+    summed = np.sum([h for _, h in per], axis=0)
+    assert np.allclose(summed, total, atol=1e-9)
+    assert abs(total.max() - 1.0) < 1e-9
+    # the total matches the plain powder_spectrum total
+    c2, tot2 = powder_spectrum(3.0, 0.2, 1.5, 10.0, n_bins=500, broadening=0.05)
+    assert np.allclose(c, c2) and np.allclose(total, tot2, atol=1e-9)
+    # central transition (m=1/2) carries the most weight (3:4:3 for I=3/2)
+    areas = {m: h.sum() for m, h in per}
+    assert areas[0.5] == max(areas.values())

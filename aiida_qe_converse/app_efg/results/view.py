@@ -7,10 +7,15 @@ from .model import EFGResultsModel
 from ...data.nuclear import default_gamma, larmor_frequency
 from ...postprocessing.quadrupolar_spectrum import (
     powder_spectrum,
+    powder_spectrum_by_transition,
     single_crystal_lines,
     broaden_lines,
     lattice_direction_to_angles,
 )
+
+# qualitative palette for the per-transition powder curves
+_TRANSITION_COLORS = ["#17becf", "#9467bd", "#2ca02c", "#ff7f0e",
+                      "#e377c2", "#8c564b", "#bcbd22", "#1f77b4", "#d62728"]
 
 
 def _half_int_str(x):
@@ -223,7 +228,12 @@ class EFGResultsPanel(ResultsPanel[EFGResultsModel]):
         self._spec_leb = ipw.Dropdown(
             options=[17, 29, 53, 89, 131], value=53, description="Lebedev order:",
             style={"description_width": "120px"}, layout=ipw.Layout(width="220px"))
-        self._spec_powder_box = ipw.HBox([self._spec_method, self._spec_npts, self._spec_leb])
+        self._spec_decompose = ipw.Checkbox(value=False, indent=False,
+                                            description="decompose by transition")
+        self._spec_powder_box = ipw.VBox([
+            ipw.HBox([self._spec_method, self._spec_npts, self._spec_leb]),
+            self._spec_decompose,
+        ])
 
         # single-crystal-only controls: field direction in lattice units
         self._spec_da = ipw.FloatText(value=0.0, description="a:",
@@ -252,7 +262,7 @@ class EFGResultsPanel(ResultsPanel[EFGResultsModel]):
         self._spec_method.observe(lambda c: self._update_spectrum_visibility(), names="value")
         for w in (self._spec_B, self._spec_gamma, self._spec_broad, self._spec_npts,
                   self._spec_leb, self._spec_da, self._spec_db, self._spec_dc,
-                  self._spec_second):
+                  self._spec_second, self._spec_decompose):
             w.observe(lambda c: self._recompute_spectrum(), names="value")
         self._recompute_spectrum()
 
@@ -315,17 +325,31 @@ class EFGResultsPanel(ResultsPanel[EFGResultsModel]):
                      f"ν<sub>Q</sub> = {nu_Q:.4f} MHz &nbsp;|&nbsp; η = {eta:.4f} "
                      f"&nbsp;|&nbsp; I = {spin_I:g}")
         fig = go.Figure()
+        show_legend = False
 
         try:
             if self._spec_mode.value == "powder":
                 method = self._spec_method.value
                 n = max(int(self._spec_npts.value), 8)
-                freqs, inten = powder_spectrum(
-                    nu_Q, eta, spin_I, nu_L, n_theta=n, n_phi=n, broadening=broad,
-                    method=method, lebedev_order=int(self._spec_leb.value),
-                    second_order=second)
-                fig.add_trace(go.Scatter(x=freqs - nu_L, y=inten, mode="lines",
-                                         line=dict(color="#1f77b4")))
+                kwargs = dict(n_theta=n, n_phi=n, broadening=broad, method=method,
+                              lebedev_order=int(self._spec_leb.value), second_order=second)
+                if self._spec_decompose.value:
+                    # one curve per transition (thesis Fig. 2.3) + total
+                    freqs, per, total = powder_spectrum_by_transition(
+                        nu_Q, eta, spin_I, nu_L, **kwargs)
+                    fig.add_trace(go.Scatter(x=freqs - nu_L, y=total, mode="lines",
+                                             name="total", line=dict(color="#000000", width=2)))
+                    for i, (m, inten) in enumerate(per):
+                        lbl = f"{_half_int_str(m - 1)}↔{_half_int_str(m)}"
+                        fig.add_trace(go.Scatter(
+                            x=freqs - nu_L, y=inten, mode="lines", name=lbl,
+                            line=dict(color=_TRANSITION_COLORS[i % len(_TRANSITION_COLORS)],
+                                      dash="dash")))
+                    show_legend = True
+                else:
+                    freqs, inten = powder_spectrum(nu_Q, eta, spin_I, nu_L, **kwargs)
+                    fig.add_trace(go.Scatter(x=freqs - nu_L, y=inten, mode="lines",
+                                             line=dict(color="#1f77b4")))
                 scheme = ("Lebedev order %d" % int(self._spec_leb.value)
                           if method == "lebedev" else "%dx%d grid" % (n, n))
                 self._spec_info.value = base_info + f" &nbsp;|&nbsp; {scheme}"
@@ -372,7 +396,7 @@ class EFGResultsPanel(ResultsPanel[EFGResultsModel]):
         fig.update_layout(
             xaxis_title="ν − ν_L (MHz)", yaxis_title="intensity (norm.)",
             height=420, margin=dict(l=50, r=20, t=20, b=50),
-            template="plotly_white", showlegend=False)
+            template="plotly_white", showlegend=show_legend)
         self._spec_plot.children = [go.FigureWidget(fig)]
 
     def _render_structure_view(self):

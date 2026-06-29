@@ -197,29 +197,33 @@ def orientation_sampling(method='grid', n_theta=200, n_phi=200, lebedev_order=53
     return theta, phi, np.ones(theta.size)
 
 
-def powder_spectrum(nu_Q, eta, spin_I, nu_L,
-                    n_theta=200, n_phi=200, n_bins=1000,
-                    freq_window=None, broadening=None,
-                    method='grid', lebedev_order=53, second_order=True):
-    """Simulate a powder quadrupolar NMR spectrum.
+def _gaussian_broaden(intensity, lo, hi, n_bins, broadening):
+    """Convolve a binned histogram with a Gaussian of FWHM ``broadening`` (MHz)."""
+    if not broadening:
+        return intensity.astype(float)
+    bin_width = (hi - lo) / n_bins
+    sigma = broadening / (2.0 * np.sqrt(2.0 * np.log(2.0)))  # FWHM -> sigma
+    sigma_bins = max(sigma / bin_width, 1e-6)
+    half = int(np.ceil(4.0 * sigma_bins))
+    x = np.arange(-half, half + 1)
+    kernel = np.exp(-0.5 * (x / sigma_bins) ** 2)
+    kernel /= kernel.sum()
+    return np.convolve(intensity.astype(float), kernel, mode='same')
 
-    Args:
-        nu_Q: quadrupolar frequency (MHz).
-        eta: EFG asymmetry parameter (0..1).
-        spin_I: nuclear spin I (>= 1).
-        nu_L: Larmor frequency (MHz).
-        n_theta, n_phi: orientation grid density (``method='grid'``).
-        n_bins: number of frequency bins.
-        freq_window: optional (lo, hi) frequency window in MHz; defaults to the
-            observed min/max with a small pad.
-        broadening: optional Gaussian FWHM (MHz) convolved with the histogram.
-        method: orientation averaging scheme, ``'grid'`` or ``'lebedev'``.
-        lebedev_order: Lebedev quadrature order (used when ``method='lebedev'``).
 
-    Returns:
-        ``(frequencies, intensities)`` numpy arrays.  ``frequencies`` are bin
-        centres in MHz; ``intensities`` is the binned, solid-angle and
-        transition-probability weighted line density (normalised to unit maximum).
+def powder_spectrum_by_transition(nu_Q, eta, spin_I, nu_L,
+                                  n_theta=200, n_phi=200, n_bins=1000,
+                                  freq_window=None, broadening=None,
+                                  method='grid', lebedev_order=53, second_order=True):
+    """Powder spectrum decomposed per transition (as in the thesis Fig. 2.3).
+
+    Same physics/averaging as :func:`powder_spectrum`, but each transition
+    |m-1> -> |m> is histogrammed separately on a *common* frequency grid so the
+    curves overlay. All curves share one normalisation (the total's maximum), so
+    the per-transition lineshapes add up to the total.
+
+    Returns ``(frequencies, per_transition, total)`` where ``per_transition`` is
+    a list of ``(m, intensity)`` ordered by ``m`` and ``total`` is their sum.
     """
     spin_I = float(spin_I)
     if spin_I < 1.0:
@@ -227,43 +231,59 @@ def powder_spectrum(nu_Q, eta, spin_I, nu_L,
 
     theta_f, phi_f, ori_w = orientation_sampling(method, n_theta, n_phi, lebedev_order)
 
-    all_freqs = []
-    all_weights = []
+    per_freqs = []  # (m, nu_array, weight_array)
     for m in _transition_m_values(spin_I):
         nu1, nu2 = _quadrupolar_shift(m, nu_Q, eta, spin_I, nu_L, theta_f, phi_f, second_order)
         nu = nu_L + nu1 + nu2  # (2.32)
         weight = ori_w * transition_weight(m, spin_I)  # solid angle x (2.33)
-        all_freqs.append(nu)
-        all_weights.append(weight)
+        per_freqs.append((m, nu, weight))
 
-    freqs = np.concatenate(all_freqs)
-    weights = np.concatenate(all_weights)
-
+    all_nu = np.concatenate([nu for _, nu, _ in per_freqs])
     if freq_window is None:
-        lo, hi = float(freqs.min()), float(freqs.max())
+        lo, hi = float(all_nu.min()), float(all_nu.max())
         pad = 0.05 * (hi - lo) if hi > lo else 1.0
         lo, hi = lo - pad, hi + pad
     else:
         lo, hi = freq_window
 
-    intensity, edges = np.histogram(freqs, bins=n_bins, range=(lo, hi), weights=weights)
+    edges = np.linspace(lo, hi, n_bins + 1)
     centres = 0.5 * (edges[:-1] + edges[1:])
 
-    if broadening:
-        bin_width = (hi - lo) / n_bins
-        sigma = broadening / (2.0 * np.sqrt(2.0 * np.log(2.0)))  # FWHM -> sigma
-        sigma_bins = max(sigma / bin_width, 1e-6)
-        half = int(np.ceil(4.0 * sigma_bins))
-        x = np.arange(-half, half + 1)
-        kernel = np.exp(-0.5 * (x / sigma_bins) ** 2)
-        kernel /= kernel.sum()
-        intensity = np.convolve(intensity.astype(float), kernel, mode='same')
+    per_transition = []
+    total = np.zeros(n_bins)
+    for m, nu, weight in per_freqs:
+        hist, _ = np.histogram(nu, bins=edges, weights=weight)
+        hist = _gaussian_broaden(hist, lo, hi, n_bins, broadening)
+        per_transition.append((m, hist))
+        total = total + hist
 
-    peak = intensity.max()
+    peak = total.max()
     if peak > 0:
-        intensity = intensity / peak
+        total = total / peak
+        per_transition = [(m, h / peak) for m, h in per_transition]
 
-    return centres, intensity
+    return centres, per_transition, total
+
+
+def powder_spectrum(nu_Q, eta, spin_I, nu_L,
+                    n_theta=200, n_phi=200, n_bins=1000,
+                    freq_window=None, broadening=None,
+                    method='grid', lebedev_order=53, second_order=True):
+    """Simulate a (total) powder quadrupolar NMR spectrum.
+
+    Thin wrapper over :func:`powder_spectrum_by_transition` returning only the
+    total. See that function for the argument meanings.
+
+    Returns:
+        ``(frequencies, intensities)`` numpy arrays; ``intensities`` is the
+        total binned, solid-angle and transition-probability weighted line
+        density (normalised to unit maximum).
+    """
+    centres, _per, total = powder_spectrum_by_transition(
+        nu_Q, eta, spin_I, nu_L, n_theta=n_theta, n_phi=n_phi, n_bins=n_bins,
+        freq_window=freq_window, broadening=broadening, method=method,
+        lebedev_order=lebedev_order, second_order=second_order)
+    return centres, total
 
 
 # AiiDA calcfunction wrapper, defined only when AiiDA is importable so that the
