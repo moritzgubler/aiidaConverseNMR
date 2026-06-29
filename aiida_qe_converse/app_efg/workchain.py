@@ -15,6 +15,7 @@ def get_builder(codes, structure, parameters, **kwargs):
     efg_params = parameters.get("qeefg", {})
     target_atoms = efg_params.get("target_atoms", None)
     nuclear_data = efg_params.get("nuclear_data", None) or None
+    pseudo_family = efg_params.get("pseudo_family", "gipaw_PBE")
 
     pw_code = codes.get("pw_efg", {}).get("code", None)
     efg_code = codes.get("qeefg", {}).get("code", None)
@@ -24,6 +25,7 @@ def get_builder(codes, structure, parameters, **kwargs):
         efg_code=efg_code,
         structure=structure,
         protocol=protocol,
+        pseudo_family=pseudo_family,
         target_atoms=target_atoms,
         nuclear_data=nuclear_data,
         **kwargs
