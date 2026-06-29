@@ -22,6 +22,21 @@ from ..data.nuclear import efg_arrays_from_structure
 from ..postprocessing.quadrupolar_spectrum import simulate_powder_spectrum
 
 
+def _options_for_code(options, code):
+    """Return ``options`` with ``withmpi`` aligned to the code's setting.
+
+    A code registered ``--no-with-mpi`` (e.g. a serial QE build) must be
+    submitted with ``withmpi=False``, otherwise AiiDA raises an inconsistency
+    error against the CalcJob's default ``withmpi=True``. If the code does not
+    pin ``with_mpi`` (``None``), the option default is left untouched.
+    """
+    opts = dict(options)
+    with_mpi = getattr(code, 'with_mpi', None)
+    if with_mpi is not None:
+        opts['withmpi'] = with_mpi
+    return opts
+
+
 @calcfunction
 def collect_efg_results(efg_output, structure, target_atoms):
     """Map the parser output (keyed by 1-based atom index) onto atom labels.
@@ -207,7 +222,7 @@ class EfgWorkChain(WorkChain):
                 'structure': self.inputs.structure,
                 'parameters': self.inputs.scf_parameters,
                 'pseudos': pseudos,
-                'metadata': {'options': self.inputs.options.get_dict()},
+                'metadata': {'options': _options_for_code(self.inputs.options.get_dict(), self.inputs.pw_code)},
             },
             'kpoints_distance': self.inputs.kpoints_distance,
         }
@@ -244,7 +259,7 @@ class EfgWorkChain(WorkChain):
                 'parameters': orm.Dict(dict={'input_qeefg': params}),
                 'parent_folder': self.ctx.scf_remote_folder,
                 'metadata': {
-                    'options': self.inputs.options.get_dict(),
+                    'options': _options_for_code(self.inputs.options.get_dict(), self.inputs.efg_code),
                     'label': 'efg',
                     'description': 'EFG tensor calculation for all atoms',
                 },
