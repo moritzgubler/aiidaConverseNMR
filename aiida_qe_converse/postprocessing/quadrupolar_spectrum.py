@@ -102,6 +102,35 @@ def single_crystal_lines(nu_Q, eta, spin_I, nu_L, theta, phi):
     return lines
 
 
+def broaden_lines(lines, broadening, n_points=2000, window=None):
+    """Convert discrete ``(freq, weight, m)`` lines into a Gaussian-broadened curve.
+
+    Returns ``(frequencies, intensity)`` (intensity normalised to unit max), the
+    sum of one Gaussian per line with FWHM ``broadening`` (MHz) and area ~ weight.
+    """
+    if not lines:
+        return np.array([]), np.array([])
+    freqs = np.array([ln[0] for ln in lines], dtype=float)
+    weights = np.array([ln[1] for ln in lines], dtype=float)
+    if window is None:
+        lo, hi = float(freqs.min()), float(freqs.max())
+        span = hi - lo
+        pad = max(5.0 * (broadening or 0.0), 0.1 * span if span > 0 else 1.0)
+        lo, hi = lo - pad, hi + pad
+    else:
+        lo, hi = window
+    grid = np.linspace(lo, hi, n_points)
+    fwhm = broadening or (hi - lo) / 200.0
+    sigma = fwhm / (2.0 * np.sqrt(2.0 * np.log(2.0)))
+    intensity = np.zeros_like(grid)
+    for freq, weight in zip(freqs, weights):
+        intensity += weight * np.exp(-0.5 * ((grid - freq) / sigma) ** 2)
+    peak = intensity.max()
+    if peak > 0:
+        intensity /= peak
+    return grid, intensity
+
+
 def lattice_direction_to_angles(direction, cell, axes):
     """Convert a field direction in lattice-vector units to EFG-frame (theta, phi).
 
@@ -135,9 +164,41 @@ def lattice_direction_to_angles(direction, cell, axes):
     return theta, phi
 
 
+def orientation_sampling(method='grid', n_theta=200, n_phi=200, lebedev_order=53):
+    """Return ``(theta, phi, weight)`` samples of field orientations on the sphere.
+
+    Two schemes:
+
+    * ``'grid'`` (default): a regular product grid uniform in ``cos(theta)`` and
+      ``phi`` -- every point carries equal solid angle (weight 1).
+    * ``'lebedev'``: Lebedev quadrature nodes (``scipy.integrate.lebedev_rule``)
+      with their proper solid-angle weights; far fewer points for the same
+      angular accuracy and no preferred axis.
+
+    Angles are in the EFG principal-axis frame (the powder average is over all
+    orientations of the field relative to that frame, so no cell is needed).
+    """
+    if method == 'lebedev':
+        from scipy.integrate import lebedev_rule
+        pts, weights = lebedev_rule(int(lebedev_order))
+        x, y, z = pts
+        theta = np.arccos(np.clip(z, -1.0, 1.0))
+        phi = np.arctan2(y, x)
+        return theta, phi, weights
+    # equal-area regular grid
+    cos_theta = np.linspace(-1.0, 1.0, n_theta)
+    theta1 = np.arccos(np.clip(cos_theta, -1.0, 1.0))
+    phi1 = np.linspace(0.0, 2.0 * np.pi, n_phi, endpoint=False)
+    theta_g, phi_g = np.meshgrid(theta1, phi1, indexing='ij')
+    theta = theta_g.ravel()
+    phi = phi_g.ravel()
+    return theta, phi, np.ones(theta.size)
+
+
 def powder_spectrum(nu_Q, eta, spin_I, nu_L,
                     n_theta=200, n_phi=200, n_bins=1000,
-                    freq_window=None, broadening=None):
+                    freq_window=None, broadening=None,
+                    method='grid', lebedev_order=53):
     """Simulate a powder quadrupolar NMR spectrum.
 
     Args:
@@ -145,37 +206,33 @@ def powder_spectrum(nu_Q, eta, spin_I, nu_L,
         eta: EFG asymmetry parameter (0..1).
         spin_I: nuclear spin I (>= 1).
         nu_L: Larmor frequency (MHz).
-        n_theta, n_phi: orientation grid density.
+        n_theta, n_phi: orientation grid density (``method='grid'``).
         n_bins: number of frequency bins.
         freq_window: optional (lo, hi) frequency window in MHz; defaults to the
             observed min/max with a small pad.
         broadening: optional Gaussian FWHM (MHz) convolved with the histogram.
+        method: orientation averaging scheme, ``'grid'`` or ``'lebedev'``.
+        lebedev_order: Lebedev quadrature order (used when ``method='lebedev'``).
 
     Returns:
         ``(frequencies, intensities)`` numpy arrays.  ``frequencies`` are bin
-        centres in MHz; ``intensities`` is the binned, transition-probability
-        weighted line density (normalised to unit maximum).
+        centres in MHz; ``intensities`` is the binned, solid-angle and
+        transition-probability weighted line density (normalised to unit maximum).
     """
     spin_I = float(spin_I)
     if spin_I < 1.0:
         raise ValueError('Quadrupolar spectrum requires I >= 1')
 
-    # Uniform-on-sphere orientation grid: cos(theta) uniform, phi uniform.
-    cos_theta = np.linspace(-1.0, 1.0, n_theta)
-    theta = np.arccos(np.clip(cos_theta, -1.0, 1.0))
-    phi = np.linspace(0.0, 2.0 * np.pi, n_phi, endpoint=False)
-    theta_g, phi_g = np.meshgrid(theta, phi, indexing='ij')
-    theta_f = theta_g.ravel()
-    phi_f = phi_g.ravel()
+    theta_f, phi_f, ori_w = orientation_sampling(method, n_theta, n_phi, lebedev_order)
 
     all_freqs = []
     all_weights = []
     for m in _transition_m_values(spin_I):
         nu1, nu2 = _quadrupolar_shift(m, nu_Q, eta, spin_I, nu_L, theta_f, phi_f)
         nu = nu_L + nu1 + nu2  # (2.32)
-        weight = transition_weight(m, spin_I)  # (2.33)
+        weight = ori_w * transition_weight(m, spin_I)  # solid angle x (2.33)
         all_freqs.append(nu)
-        all_weights.append(np.full_like(nu, weight))
+        all_weights.append(weight)
 
     freqs = np.concatenate(all_freqs)
     weights = np.concatenate(all_weights)

@@ -136,3 +136,28 @@ def test_larmor_frequency():
     # unknown / non-quadrupolar element -> None
     assert default_gamma("Si") is None
     assert larmor_frequency("Si", 9.4) is None
+
+
+def test_lebedev_method_matches_grid_shape_and_norm():
+    import numpy as np
+    f1, i1 = powder_spectrum(3.0, 0.2, 1.5, 10.0, n_bins=400, method="grid")
+    f2, i2 = powder_spectrum(3.0, 0.2, 1.5, 10.0, n_bins=400, method="lebedev",
+                             lebedev_order=53)
+    assert f1.shape == i1.shape == (400,)
+    assert f2.shape == i2.shape == (400,)
+    assert abs(i2.max() - 1.0) < 1e-12
+    # both methods should place the spectral weight in a similar window
+    assert abs((f1[i1 > 0.1].mean()) - (f2[i2 > 0.1].mean())) < 0.5
+
+
+def test_broaden_lines():
+    import numpy as np
+    from aiida_qe_converse.postprocessing.quadrupolar_spectrum import (
+        broaden_lines, single_crystal_lines)
+    lines = single_crystal_lines(3.0, 0.0, 1.5, 1000.0, theta=0.0, phi=0.0)
+    x, y = broaden_lines(lines, broadening=0.1, n_points=4000)
+    assert x.shape == y.shape == (4000,)
+    assert abs(y.max() - 1.0) < 1e-9
+    # peaks should sit near the line positions
+    for f, w, m in lines:
+        assert y[np.argmin(np.abs(x - f))] > 0.3
