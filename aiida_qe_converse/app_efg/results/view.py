@@ -8,6 +8,7 @@ from ...data.nuclear import default_gamma, larmor_frequency
 from ...postprocessing.quadrupolar_spectrum import (
     powder_spectrum,
     single_crystal_lines,
+    broaden_lines,
     lattice_direction_to_angles,
 )
 
@@ -189,12 +190,33 @@ class EFGResultsPanel(ResultsPanel[EFGResultsModel]):
                 "(a spectrum needs I&ge;1 and Q&ne;0).</i></p>"
             )])
 
+        self._spec_mode = ipw.ToggleButtons(
+            options=[("Powder (orientation average)", "powder"),
+                     ("Single crystal (fixed direction)", "single")],
+            value="powder",
+        )
         self._spec_atom = ipw.Dropdown(options=atoms, description="Atom:",
                                        style={"description_width": "120px"})
         self._spec_B = ipw.FloatText(value=9.4, description="B field (T):",
                                      style={"description_width": "120px"})
         self._spec_gamma = ipw.FloatText(value=0.0, description="|γ| (MHz/T):",
                                          style={"description_width": "120px"})
+        self._spec_broad = ipw.FloatText(value=0.0, description="broadening (MHz):",
+                                         style={"description_width": "140px"})
+
+        # powder-only controls: averaging scheme
+        self._spec_method = ipw.Dropdown(
+            options=[("Equal-area grid", "grid"), ("Lebedev quadrature", "lebedev")],
+            value="grid", description="Averaging:", style={"description_width": "120px"})
+        self._spec_npts = ipw.IntText(value=200, description="grid n (θ,φ):",
+                                      style={"description_width": "120px"},
+                                      layout=ipw.Layout(width="220px"))
+        self._spec_leb = ipw.Dropdown(
+            options=[17, 29, 53, 89, 131], value=53, description="Lebedev order:",
+            style={"description_width": "120px"}, layout=ipw.Layout(width="220px"))
+        self._spec_powder_box = ipw.HBox([self._spec_method, self._spec_npts, self._spec_leb])
+
+        # single-crystal-only controls: field direction in lattice units
         self._spec_da = ipw.FloatText(value=0.0, description="a:",
                                       layout=ipw.Layout(width="120px"),
                                       style={"description_width": "20px"})
@@ -204,39 +226,55 @@ class EFGResultsPanel(ResultsPanel[EFGResultsModel]):
         self._spec_dc = ipw.FloatText(value=1.0, description="c:",
                                       layout=ipw.Layout(width="120px"),
                                       style={"description_width": "20px"})
-        self._spec_broad = ipw.FloatText(value=0.0, description="broadening (MHz):",
-                                         style={"description_width": "140px"})
+        self._spec_single_box = ipw.VBox([
+            ipw.HTML("<b>Field direction</b> (lattice-vector units, normalised automatically):"),
+            ipw.HBox([self._spec_da, self._spec_db, self._spec_dc]),
+        ])
+
         self._spec_info = ipw.HTML()
-        # Container that holds a plotly FigureWidget (the pattern aiidalab-qe uses
-        # for its own plots; display(fig) into an Output does not render here).
+        # Container holding a plotly FigureWidget (display(fig) does not render here).
         self._spec_plot = ipw.VBox()
 
-        self._spec_on_atom_change()  # seed gamma/broadening from first atom
+        self._spec_on_atom_change()         # seed gamma/broadening
+        self._update_spectrum_visibility()  # show the right controls for the mode
+
         self._spec_atom.observe(lambda c: self._spec_on_atom_change(), names="value")
-        for w in (self._spec_B, self._spec_gamma, self._spec_da, self._spec_db,
-                  self._spec_dc, self._spec_broad):
+        self._spec_mode.observe(lambda c: self._update_spectrum_visibility(), names="value")
+        self._spec_method.observe(lambda c: self._update_spectrum_visibility(), names="value")
+        for w in (self._spec_B, self._spec_gamma, self._spec_broad, self._spec_npts,
+                  self._spec_leb, self._spec_da, self._spec_db, self._spec_dc):
             w.observe(lambda c: self._recompute_spectrum(), names="value")
         self._recompute_spectrum()
 
         controls = ipw.VBox([
+            self._spec_mode,
             self._spec_atom,
             ipw.HBox([self._spec_B, self._spec_gamma]),
-            ipw.HTML("<b>Field direction</b> (lattice-vector units, normalised automatically):"),
-            ipw.HBox([self._spec_da, self._spec_db, self._spec_dc]),
+            self._spec_powder_box,
+            self._spec_single_box,
             self._spec_broad,
             self._spec_info,
         ])
         return ipw.VBox([
             ipw.HTML(
                 "<h4>Quadrupolar NMR spectrum</h4>"
-                "<p>Powder lineshape (orientation average, eqs 2.28–2.33) with the "
-                "single-crystal transition lines for the entered field direction "
-                "overlaid (red). The field strength sets "
-                "ν<sub>L</sub> = |γ|·B; the direction is projected onto the EFG "
-                "principal axes to get (θ, φ).</p>"),
+                "<p><b>Powder</b>: average over all field orientations (eqs 2.28–2.33), "
+                "independent of direction — pick an equal-area grid or Lebedev "
+                "quadrature. <b>Single crystal</b>: discrete transition lines for a "
+                "fixed field direction, projected onto the EFG principal axes to get "
+                "(θ, φ). The field strength sets ν<sub>L</sub> = |γ|·B.</p>"),
             controls,
             self._spec_plot,
         ])
+
+    def _update_spectrum_visibility(self):
+        powder = self._spec_mode.value == "powder"
+        self._spec_powder_box.layout.display = "" if powder else "none"
+        self._spec_single_box.layout.display = "none" if powder else ""
+        lebedev = self._spec_method.value == "lebedev"
+        self._spec_npts.layout.display = "none" if lebedev else "inline-flex"
+        self._spec_leb.layout.display = "inline-flex" if lebedev else "none"
+        self._recompute_spectrum()
 
     def _spec_on_atom_change(self):
         label = self._spec_atom.value
@@ -260,41 +298,54 @@ class EFGResultsPanel(ResultsPanel[EFGResultsModel]):
         spin_I = float(p.get("I") or 0.0)
         axes = p.get("eigenvectors") or {}
         nu_L = abs(float(self._spec_gamma.value)) * float(self._spec_B.value)
-        direction = [self._spec_da.value, self._spec_db.value, self._spec_dc.value]
         broad = float(self._spec_broad.value) or None
 
-        theta = phi = None
-        try:
-            if self._model.structure and all(k in axes for k in ("Vxx", "Vyy", "Vzz")):
-                theta, phi = lattice_direction_to_angles(
-                    direction, self._model.structure.cell, axes)
-        except Exception:
-            theta = phi = None
-
-        info = (f"ν<sub>L</sub> = |γ|·B = {nu_L:.3f} MHz &nbsp;|&nbsp; "
-                f"ν<sub>Q</sub> = {nu_Q:.4f} MHz &nbsp;|&nbsp; η = {eta:.4f} "
-                f"&nbsp;|&nbsp; I = {spin_I:g}")
-        if theta is not None:
-            info += f" &nbsp;|&nbsp; θ = {np.degrees(theta):.1f}°, φ = {np.degrees(phi):.1f}°"
-        self._spec_info.value = info
+        base_info = (f"ν<sub>L</sub> = |γ|·B = {nu_L:.3f} MHz &nbsp;|&nbsp; "
+                     f"ν<sub>Q</sub> = {nu_Q:.4f} MHz &nbsp;|&nbsp; η = {eta:.4f} "
+                     f"&nbsp;|&nbsp; I = {spin_I:g}")
+        fig = go.Figure()
 
         try:
-            freqs, inten = powder_spectrum(nu_Q, eta, spin_I, nu_L, broadening=broad)
+            if self._spec_mode.value == "powder":
+                method = self._spec_method.value
+                n = max(int(self._spec_npts.value), 8)
+                freqs, inten = powder_spectrum(
+                    nu_Q, eta, spin_I, nu_L, n_theta=n, n_phi=n, broadening=broad,
+                    method=method, lebedev_order=int(self._spec_leb.value))
+                fig.add_trace(go.Scatter(x=freqs - nu_L, y=inten, mode="lines",
+                                         line=dict(color="#1f77b4")))
+                scheme = ("Lebedev order %d" % int(self._spec_leb.value)
+                          if method == "lebedev" else "%dx%d grid" % (n, n))
+                self._spec_info.value = base_info + f" &nbsp;|&nbsp; {scheme}"
+            else:
+                theta = phi = None
+                if self._model.structure and all(k in axes for k in ("Vxx", "Vyy", "Vzz")):
+                    direction = [self._spec_da.value, self._spec_db.value, self._spec_dc.value]
+                    theta, phi = lattice_direction_to_angles(
+                        direction, self._model.structure.cell, axes)
+                if theta is None:
+                    self._spec_plot.children = [ipw.HTML(
+                        "<i>Single-crystal mode needs the structure and EFG "
+                        "eigenvectors (missing here).</i>")]
+                    self._spec_info.value = base_info
+                    return
+                lines = single_crystal_lines(nu_Q, eta, spin_I, nu_L, theta, phi)
+                if broad:
+                    gx, gy = broaden_lines(lines, broad)
+                    fig.add_trace(go.Scatter(x=gx - nu_L, y=gy, mode="lines",
+                                             line=dict(color="#1f77b4")))
+                wmax = max((w for _, w, _ in lines), default=1.0) or 1.0
+                for freq, weight, m in lines:
+                    fig.add_trace(go.Scatter(
+                        x=[freq - nu_L, freq - nu_L], y=[0.0, weight / wmax],
+                        mode="lines", line=dict(color="#d62728", width=2),
+                        showlegend=False, hovertext=f"m: {m-1:g}→{m:g}"))
+                self._spec_info.value = (base_info +
+                    f" &nbsp;|&nbsp; θ = {np.degrees(theta):.1f}°, φ = {np.degrees(phi):.1f}°")
         except Exception as exc:
             self._spec_plot.children = [ipw.HTML(f"<i>Could not compute spectrum: {exc}</i>")]
             return
 
-        fig = go.Figure()
-        fig.add_trace(go.Scatter(x=freqs - nu_L, y=inten, mode="lines",
-                                 name="powder", line=dict(color="#1f77b4")))
-        if theta is not None:
-            lines = single_crystal_lines(nu_Q, eta, spin_I, nu_L, theta, phi)
-            wmax = max((w for _, w, _ in lines), default=1.0) or 1.0
-            for freq, weight, m in lines:
-                fig.add_trace(go.Scatter(
-                    x=[freq - nu_L, freq - nu_L], y=[0.0, weight / wmax],
-                    mode="lines", line=dict(color="#d62728", width=2),
-                    showlegend=False, hovertext=f"m: {m-1:g}→{m:g}"))
         fig.update_layout(
             xaxis_title="ν − ν_L (MHz)", yaxis_title="intensity (norm.)",
             height=420, margin=dict(l=50, r=20, t=20, b=50),
