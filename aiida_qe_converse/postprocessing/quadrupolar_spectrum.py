@@ -55,6 +55,86 @@ def _AB(eta, theta, phi):
     return A, B
 
 
+def _quadrupolar_shift(m, nu_Q, eta, spin_I, nu_L, theta, phi):
+    """First- and second-order quadrupolar shifts for transition |m-1> -> |m>.
+
+    Implements eqs 2.28 (``nu1``) and 2.29 (``nu2``); ``theta``/``phi`` (the
+    field direction in the EFG principal-axis frame) may be scalars or numpy
+    arrays. Returns ``(nu1, nu2)`` in MHz.
+    """
+    sin2 = np.sin(theta) ** 2
+    cos2 = np.cos(theta) ** 2
+    cos2phi = np.cos(2.0 * phi)
+    nu1 = 0.25 * nu_Q * (1.0 - 2.0 * m) * (3.0 * cos2 - 1.0 + eta * sin2 * cos2phi)
+    if nu_L != 0.0:
+        A, B = _AB(eta, theta, phi)
+        II1 = spin_I * (spin_I + 1.0)
+        mm1 = m * (m - 1.0)
+        nu2 = -(nu_Q**2 / nu_L) * (
+            -A * (mm1 - II1 / 6.0 + 3.0 / 8.0)
+            + B * (0.5 * mm1 - II1 / 6.0 + 1.0 / 4.0)
+        )
+    else:
+        nu2 = 0.0 * nu1
+    return nu1, nu2
+
+
+def transition_weight(m, spin_I):
+    """Relative transition probability p(I, m) = I(I+1) - m(m-1) (eq 2.33)."""
+    return spin_I * (spin_I + 1.0) - m * (m - 1.0)
+
+
+def single_crystal_lines(nu_Q, eta, spin_I, nu_L, theta, phi):
+    """Transition line positions for a single crystal orientation (theta, phi).
+
+    Returns a list of ``(frequency_MHz, intensity, m)`` tuples, one per
+    transition |m-1> -> |m>, using eqs 2.28+2.29+2.32 for the frequency and
+    eq 2.33 for the intensity. ``theta``/``phi`` are the polar/azimuthal angles
+    of the field in the EFG principal-axis frame (radians).
+    """
+    spin_I = float(spin_I)
+    if spin_I < 1.0:
+        raise ValueError('Quadrupolar spectrum requires I >= 1')
+    lines = []
+    for m in _transition_m_values(spin_I):
+        nu1, nu2 = _quadrupolar_shift(m, nu_Q, eta, spin_I, nu_L, theta, phi)
+        lines.append((float(nu_L + nu1 + nu2), float(transition_weight(m, spin_I)), float(m)))
+    return lines
+
+
+def lattice_direction_to_angles(direction, cell, axes):
+    """Convert a field direction in lattice-vector units to EFG-frame (theta, phi).
+
+    Args:
+        direction: 3 coefficients ``(d1, d2, d3)`` so that the (un-normalised)
+            field is ``d1*a1 + d2*a2 + d3*a3`` with ``a_i`` the lattice vectors.
+        cell: 3x3 array whose *rows* are the Cartesian lattice vectors a1,a2,a3.
+        axes: dict with the EFG eigenvectors ``{'Vxx','Vyy','Vzz': [x,y,z]}`` in
+            the same Cartesian frame (as parsed from qe-efg output).
+
+    Returns:
+        ``(theta, phi)`` in radians: the polar angle from the Vzz axis and the
+        azimuth in the (Vxx, Vyy) plane. The direction is normalised automatically.
+    """
+    d = np.asarray(direction, dtype=float)
+    cell = np.asarray(cell, dtype=float)
+    b = d @ cell  # Cartesian field vector
+    norm = np.linalg.norm(b)
+    if norm == 0.0:
+        raise ValueError('Field direction is the zero vector')
+    b = b / norm
+
+    def _unit(v):
+        v = np.asarray(v, dtype=float)
+        n = np.linalg.norm(v)
+        return v / n if n else v
+
+    ex, ey, ez = _unit(axes['Vxx']), _unit(axes['Vyy']), _unit(axes['Vzz'])
+    theta = float(np.arccos(np.clip(np.dot(b, ez), -1.0, 1.0)))
+    phi = float(np.arctan2(np.dot(b, ey), np.dot(b, ex)))
+    return theta, phi
+
+
 def powder_spectrum(nu_Q, eta, spin_I, nu_L,
                     n_theta=200, n_phi=200, n_bins=1000,
                     freq_window=None, broadening=None):
@@ -88,31 +168,12 @@ def powder_spectrum(nu_Q, eta, spin_I, nu_L,
     theta_f = theta_g.ravel()
     phi_f = phi_g.ravel()
 
-    sin2 = np.sin(theta_f) ** 2
-    cos2 = np.cos(theta_f) ** 2
-    cos2phi = np.cos(2.0 * phi_f)
-    A, B = _AB(eta, theta_f, phi_f)
-
-    II1 = spin_I * (spin_I + 1.0)
-
     all_freqs = []
     all_weights = []
     for m in _transition_m_values(spin_I):
-        # First-order (2.28)
-        nu1 = 0.25 * nu_Q * (1.0 - 2.0 * m) * (3.0 * cos2 - 1.0 + eta * sin2 * cos2phi)
-        # Second-order (2.29); guard nu_L == 0
-        if nu_L != 0.0:
-            mm1 = m * (m - 1.0)
-            nu2 = -(nu_Q**2 / nu_L) * (
-                -A * (mm1 - II1 / 6.0 + 3.0 / 8.0)
-                + B * (0.5 * mm1 - II1 / 6.0 + 1.0 / 4.0)
-            )
-        else:
-            nu2 = np.zeros_like(nu1)
-
+        nu1, nu2 = _quadrupolar_shift(m, nu_Q, eta, spin_I, nu_L, theta_f, phi_f)
         nu = nu_L + nu1 + nu2  # (2.32)
-        weight = II1 - m * (m - 1.0)  # (2.33)
-
+        weight = transition_weight(m, spin_I)  # (2.33)
         all_freqs.append(nu)
         all_weights.append(np.full_like(nu, weight))
 

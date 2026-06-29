@@ -9,9 +9,13 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from aiida_qe_converse.postprocessing.quadrupolar_spectrum import (
     powder_spectrum,
+    single_crystal_lines,
+    lattice_direction_to_angles,
+    transition_weight,
     _transition_m_values,
     _AB,
 )
+from aiida_qe_converse.data.nuclear import larmor_frequency, default_gamma
 
 
 def test_transition_count():
@@ -68,3 +72,67 @@ def test_AB_finite_over_grid():
     tg, pg = np.meshgrid(theta, phi)
     A, B = _AB(0.5, tg.ravel(), pg.ravel())
     assert np.isfinite(A).all() and np.isfinite(B).all()
+
+
+def test_single_crystal_central_line_at_larmor():
+    # I=3/2, central transition m=1/2 -> 1-2m=0 so first order vanishes; with
+    # nu_L large the second-order shift is tiny, so the central line ~ nu_L.
+    lines = single_crystal_lines(nu_Q=2.0, eta=0.0, spin_I=1.5, nu_L=100.0,
+                                 theta=0.3, phi=0.7)
+    central = [f for (f, w, m) in lines if abs(m - 0.5) < 1e-9][0]
+    assert abs(central - 100.0) < 1.0  # within ~1 MHz of nu_L
+    # 2I transitions, weights match eq 2.33
+    assert len(lines) == 3
+    for f, w, m in lines:
+        assert abs(w - transition_weight(m, 1.5)) < 1e-9
+
+
+def test_single_crystal_first_order_satellites_symmetric():
+    # eta=0, theta=0: first-order satellite shift = (1/4) nu_Q (1-2m) * 2.
+    # For m=3/2 and m=-1/2 (the two satellites of I=3/2) the shifts are +-nu_Q.
+    nuL, nuQ = 1000.0, 3.0  # huge nu_L so 2nd order ~ 0
+    lines = single_crystal_lines(nu_Q=nuQ, eta=0.0, spin_I=1.5, nu_L=nuL,
+                                 theta=0.0, phi=0.0)
+    shifts = sorted(round(f - nuL, 3) for (f, w, m) in lines)
+    # central ~0, satellites ~ +-nu_Q
+    assert abs(shifts[1]) < 1e-2
+    assert abs(shifts[0] + nuQ) < 1e-2
+    assert abs(shifts[2] - nuQ) < 1e-2
+
+
+def test_lattice_direction_to_angles_aligned():
+    import numpy as np
+    cell = np.eye(3)  # cubic, Cartesian == lattice
+    axes = {"Vxx": [1, 0, 0], "Vyy": [0, 1, 0], "Vzz": [0, 0, 1]}
+    # field along c -> along Vzz -> theta = 0
+    theta, phi = lattice_direction_to_angles([0, 0, 5.0], cell, axes)
+    assert abs(theta) < 1e-9
+    # field along a -> in plane, theta = 90 deg, phi = 0
+    theta, phi = lattice_direction_to_angles([2.0, 0, 0], cell, axes)
+    assert abs(theta - np.pi / 2) < 1e-9
+    assert abs(phi) < 1e-9
+    # field along b -> theta = 90, phi = 90 deg
+    theta, phi = lattice_direction_to_angles([0, 1.0, 0], cell, axes)
+    assert abs(phi - np.pi / 2) < 1e-9
+
+
+def test_lattice_direction_uses_cell_vectors():
+    import numpy as np
+    # non-orthogonal cell: a1 along x, a2 in xy-plane; field = a2 should not be along x
+    cell = np.array([[1.0, 0, 0], [1.0, 1.0, 0], [0, 0, 1.0]])
+    axes = {"Vxx": [1, 0, 0], "Vyy": [0, 1, 0], "Vzz": [0, 0, 1]}
+    theta, phi = lattice_direction_to_angles([0, 1.0, 0], cell, axes)
+    # a2 = (1,1,0)/sqrt2 -> in xy plane (theta=90), phi=45 deg
+    assert abs(theta - np.pi / 2) < 1e-9
+    assert abs(phi - np.pi / 4) < 1e-9
+
+
+def test_larmor_frequency():
+    # 17O gamma ~5.7742 MHz/T -> at 9.4 T, nu_L ~ 54.3 MHz
+    nu = larmor_frequency("O", 9.4)
+    assert nu is not None and abs(nu - 5.7742 * 9.4) < 1e-3
+    # override gamma
+    assert abs(larmor_frequency("O", 10.0, gamma=4.0) - 40.0) < 1e-9
+    # unknown / non-quadrupolar element -> None
+    assert default_gamma("Si") is None
+    assert larmor_frequency("Si", 9.4) is None
