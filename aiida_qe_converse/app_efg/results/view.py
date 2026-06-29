@@ -13,6 +13,13 @@ from ...postprocessing.quadrupolar_spectrum import (
 )
 
 
+def _half_int_str(x):
+    """Format a multiple of 1/2 as a tidy string: 0.5->'1/2', -1.5->'−3/2', 1->'1'."""
+    n = int(round(2 * x))
+    s = str(n // 2) if n % 2 == 0 else f"{n}/2"
+    return s.replace("-", "−")
+
+
 class EFGResultsPanel(ResultsPanel[EFGResultsModel]):
     """Panel for displaying EFG / quadrupolar results."""
 
@@ -342,10 +349,20 @@ class EFGResultsPanel(ResultsPanel[EFGResultsModel]):
                                              line=dict(color="#1f77b4")))
                 wmax = max((w for _, w, _ in lines), default=1.0) or 1.0
                 for freq, weight, m in lines:
+                    x0 = freq - nu_L
+                    height = weight / wmax
+                    label = f"{_half_int_str(m - 1)}↔{_half_int_str(m)}"
                     fig.add_trace(go.Scatter(
-                        x=[freq - nu_L, freq - nu_L], y=[0.0, weight / wmax],
-                        mode="lines", line=dict(color="#d62728", width=2),
-                        showlegend=False, hovertext=f"m: {m-1:g}→{m:g}"))
+                        x=[x0, x0], y=[0.0, height], mode="lines",
+                        line=dict(color="#d62728", width=2), showlegend=False,
+                        hoverinfo="text", hovertext=f"{label}  ({freq:.4f} MHz)"))
+                    fig.add_trace(go.Scatter(
+                        x=[x0], y=[height], mode="markers+text",
+                        marker=dict(color="#d62728", size=4),
+                        text=[label], textposition="top center",
+                        textfont=dict(size=10, color="#d62728"),
+                        showlegend=False, hoverinfo="skip"))
+                fig.update_yaxes(range=[0.0, 1.2])  # headroom for the labels
                 self._spec_info.value = (base_info +
                     f" &nbsp;|&nbsp; θ = {np.degrees(theta):.1f}°, φ = {np.degrees(phi):.1f}°")
         except Exception as exc:
