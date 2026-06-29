@@ -207,7 +207,9 @@ class EFGResultsPanel(ResultsPanel[EFGResultsModel]):
         self._spec_broad = ipw.FloatText(value=0.0, description="broadening (MHz):",
                                          style={"description_width": "140px"})
         self._spec_info = ipw.HTML()
-        self._spec_plot = ipw.Output()
+        # Container that holds a plotly FigureWidget (the pattern aiidalab-qe uses
+        # for its own plots; display(fig) into an Output does not render here).
+        self._spec_plot = ipw.VBox()
 
         self._spec_on_atom_change()  # seed gamma/broadening from first atom
         self._spec_atom.observe(lambda c: self._spec_on_atom_change(), names="value")
@@ -250,7 +252,6 @@ class EFGResultsPanel(ResultsPanel[EFGResultsModel]):
 
     def _recompute_spectrum(self):
         import plotly.graph_objects as go
-        from IPython.display import display
 
         label = self._spec_atom.value
         p = self._model.quadrupolar_parameters.get(label, {})
@@ -277,12 +278,10 @@ class EFGResultsPanel(ResultsPanel[EFGResultsModel]):
             info += f" &nbsp;|&nbsp; θ = {np.degrees(theta):.1f}°, φ = {np.degrees(phi):.1f}°"
         self._spec_info.value = info
 
-        self._spec_plot.clear_output(wait=True)
         try:
             freqs, inten = powder_spectrum(nu_Q, eta, spin_I, nu_L, broadening=broad)
         except Exception as exc:
-            with self._spec_plot:
-                print(f"Could not compute spectrum: {exc}")
+            self._spec_plot.children = [ipw.HTML(f"<i>Could not compute spectrum: {exc}</i>")]
             return
 
         fig = go.Figure()
@@ -300,8 +299,7 @@ class EFGResultsPanel(ResultsPanel[EFGResultsModel]):
             xaxis_title="ν − ν_L (MHz)", yaxis_title="intensity (norm.)",
             height=420, margin=dict(l=50, r=20, t=20, b=50),
             template="plotly_white", showlegend=False)
-        with self._spec_plot:
-            display(fig)
+        self._spec_plot.children = [go.FigureWidget(fig)]
 
     def _render_structure_view(self):
         import re
