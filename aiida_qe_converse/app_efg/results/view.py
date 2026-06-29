@@ -203,6 +203,8 @@ class EFGResultsPanel(ResultsPanel[EFGResultsModel]):
                                          style={"description_width": "120px"})
         self._spec_broad = ipw.FloatText(value=0.0, description="broadening (MHz):",
                                          style={"description_width": "140px"})
+        self._spec_second = ipw.Checkbox(value=True, indent=False,
+                                         description="include 2nd-order term (eq 2.29)")
 
         # powder-only controls: averaging scheme
         self._spec_method = ipw.Dropdown(
@@ -242,7 +244,8 @@ class EFGResultsPanel(ResultsPanel[EFGResultsModel]):
         self._spec_mode.observe(lambda c: self._update_spectrum_visibility(), names="value")
         self._spec_method.observe(lambda c: self._update_spectrum_visibility(), names="value")
         for w in (self._spec_B, self._spec_gamma, self._spec_broad, self._spec_npts,
-                  self._spec_leb, self._spec_da, self._spec_db, self._spec_dc):
+                  self._spec_leb, self._spec_da, self._spec_db, self._spec_dc,
+                  self._spec_second):
             w.observe(lambda c: self._recompute_spectrum(), names="value")
         self._recompute_spectrum()
 
@@ -252,7 +255,7 @@ class EFGResultsPanel(ResultsPanel[EFGResultsModel]):
             ipw.HBox([self._spec_B, self._spec_gamma]),
             self._spec_powder_box,
             self._spec_single_box,
-            self._spec_broad,
+            ipw.HBox([self._spec_broad, self._spec_second]),
             self._spec_info,
         ])
         return ipw.VBox([
@@ -299,6 +302,7 @@ class EFGResultsPanel(ResultsPanel[EFGResultsModel]):
         axes = p.get("eigenvectors") or {}
         nu_L = abs(float(self._spec_gamma.value)) * float(self._spec_B.value)
         broad = float(self._spec_broad.value) or None
+        second = bool(self._spec_second.value)
 
         base_info = (f"ν<sub>L</sub> = |γ|·B = {nu_L:.3f} MHz &nbsp;|&nbsp; "
                      f"ν<sub>Q</sub> = {nu_Q:.4f} MHz &nbsp;|&nbsp; η = {eta:.4f} "
@@ -311,7 +315,8 @@ class EFGResultsPanel(ResultsPanel[EFGResultsModel]):
                 n = max(int(self._spec_npts.value), 8)
                 freqs, inten = powder_spectrum(
                     nu_Q, eta, spin_I, nu_L, n_theta=n, n_phi=n, broadening=broad,
-                    method=method, lebedev_order=int(self._spec_leb.value))
+                    method=method, lebedev_order=int(self._spec_leb.value),
+                    second_order=second)
                 fig.add_trace(go.Scatter(x=freqs - nu_L, y=inten, mode="lines",
                                          line=dict(color="#1f77b4")))
                 scheme = ("Lebedev order %d" % int(self._spec_leb.value)
@@ -329,7 +334,8 @@ class EFGResultsPanel(ResultsPanel[EFGResultsModel]):
                         "eigenvectors (missing here).</i>")]
                     self._spec_info.value = base_info
                     return
-                lines = single_crystal_lines(nu_Q, eta, spin_I, nu_L, theta, phi)
+                lines = single_crystal_lines(nu_Q, eta, spin_I, nu_L, theta, phi,
+                                             second_order=second)
                 if broad:
                     gx, gy = broaden_lines(lines, broad)
                     fig.add_trace(go.Scatter(x=gx - nu_L, y=gy, mode="lines",

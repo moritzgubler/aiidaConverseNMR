@@ -161,3 +161,19 @@ def test_broaden_lines():
     # peaks should sit near the line positions
     for f, w, m in lines:
         assert y[np.argmin(np.abs(x - f))] > 0.3
+
+
+def test_second_order_toggle():
+    # central transition m=1/2: first order vanishes, so with 2nd order OFF the
+    # central line sits exactly at nu_L; with it ON it shifts.
+    nuL = 50.0
+    on = single_crystal_lines(3.0, 0.3, 1.5, nuL, theta=0.6, phi=0.4, second_order=True)
+    off = single_crystal_lines(3.0, 0.3, 1.5, nuL, theta=0.6, phi=0.4, second_order=False)
+    c_on = [f for f, w, m in on if abs(m - 0.5) < 1e-9][0]
+    c_off = [f for f, w, m in off if abs(m - 0.5) < 1e-9][0]
+    assert abs(c_off - nuL) < 1e-9          # 2nd order off -> exactly nu_L
+    assert abs(c_on - nuL) > 1e-4           # 2nd order on -> shifted
+    # satellites (first order) are identical with/without 2nd order at huge nu_L
+    sat_on = single_crystal_lines(3.0, 0.0, 1.5, 1e6, 0.0, 0.0, second_order=True)
+    sat_off = single_crystal_lines(3.0, 0.0, 1.5, 1e6, 0.0, 0.0, second_order=False)
+    assert max(abs(a[0] - b[0]) for a, b in zip(sat_on, sat_off)) < 1e-3
