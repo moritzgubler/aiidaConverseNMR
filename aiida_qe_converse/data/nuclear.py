@@ -89,6 +89,55 @@ DEFAULT_NUCLEAR_DATA = {
 }
 
 
+# Gyromagnetic ratio gamma/2pi in MHz/T for the default (quadrupolar) isotope of
+# each element, used to convert an external field B [T] into the Larmor
+# frequency nu_L = |gamma/2pi| * B [MHz] for the quadrupolar-spectrum simulation.
+# Values are |gamma/2pi| (sign dropped: only |nu_L| enters the 2nd-order term).
+# Only nuclei with I >= 1 (which have a quadrupolar spectrum) are tabulated.
+GYROMAGNETIC_RATIOS = {
+    'Li': 16.546,   # 7Li
+    'Be': 5.984,    # 9Be
+    'B':  13.663,   # 11B
+    'N':  3.0777,   # 14N
+    'O':  5.7742,   # 17O
+    'Na': 11.2625,  # 23Na
+    'Mg': 2.6083,   # 25Mg
+    'Al': 11.1031,  # 27Al
+    'S':  3.2717,   # 33S
+    'Cl': 4.1765,   # 35Cl
+    'K':  1.9893,   # 39K
+    'Ca': 2.8697,   # 43Ca
+    'Sc': 10.3589,  # 45Sc
+    'Ti': 2.4040,   # 47Ti
+    'V':  11.2133,  # 51V
+    'Cr': 2.4115,   # 53Cr
+    'Mn': 10.5763,  # 55Mn
+    'Co': 10.0532,  # 59Co
+    'Ni': 2.394,    # 61Ni
+    'Cu': 11.3188,  # 63Cu
+    'Zn': 2.6694,   # 67Zn
+    'Ga': 10.2478,  # 69Ga
+    'Ge': 1.4897,   # 73Ge
+    'As': 7.3150,   # 75As
+    'Br': 10.7042,  # 79Br
+    'Rb': 13.9844,  # 87Rb
+    'Sr': 1.8525,   # 87Sr
+    'Zr': 3.9748,   # 91Zr
+    'Nb': 10.4523,  # 93Nb
+    'Mo': 2.7874,   # 95Mo
+    'In': 9.3856,   # 115In
+    'Sb': 10.2551,  # 121Sb
+    'I':  8.5778,   # 127I
+    'Cs': 5.6234,   # 133Cs
+    'Ba': 4.7634,   # 137Ba
+    'La': 6.0612,   # 139La
+    'Ta': 5.1627,   # 181Ta
+    'Au': 0.7406,   # 197Au
+    'Hg': 1.7776,   # 201Hg
+    'Bi': 6.9628,   # 209Bi
+}
+
+
 def default_q_i(element):
     """Return ``(Q, I)`` for ``element`` from the built-in table.
 
@@ -99,6 +148,24 @@ def default_q_i(element):
         return 0.0, 0.0
     _, spin, quad = isotope
     return quad, spin
+
+
+def default_gamma(element):
+    """Return |gamma/2pi| in MHz/T for the element's default isotope (or None)."""
+    return GYROMAGNETIC_RATIOS.get(element)
+
+
+def larmor_frequency(element, field_tesla, gamma=None):
+    """Larmor frequency nu_L = |gamma/2pi| * B in MHz.
+
+    ``gamma`` (MHz/T) overrides the built-in value; returns None if neither a
+    provided nor a tabulated gamma is available.
+    """
+    if gamma is None:
+        gamma = default_gamma(element)
+    if gamma is None:
+        return None
+    return abs(float(gamma)) * float(field_tesla)
 
 
 def build_efg_arrays(kinds, overrides=None):

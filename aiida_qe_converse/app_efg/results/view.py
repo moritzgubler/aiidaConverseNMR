@@ -1,8 +1,15 @@
 """Results panel for the EFG plugin."""
+import numpy as np
 import ipywidgets as ipw
 from aiidalab_qe.common.panel import ResultsPanel
 from aiidalab_widgets_base.viewers import StructureDataViewer
 from .model import EFGResultsModel
+from ...data.nuclear import default_gamma, larmor_frequency
+from ...postprocessing.quadrupolar_spectrum import (
+    powder_spectrum,
+    single_crystal_lines,
+    lattice_direction_to_angles,
+)
 
 
 class EFGResultsPanel(ResultsPanel[EFGResultsModel]):
@@ -45,6 +52,10 @@ class EFGResultsPanel(ResultsPanel[EFGResultsModel]):
         tensor_widget = self._render_tensor_components()
         if tensor_widget:
             widgets.append(tensor_widget)
+
+        spectrum_widget = self._render_spectrum_section()
+        if spectrum_widget:
+            widgets.append(spectrum_widget)
 
         structure_widget = self._render_structure_view()
         if structure_widget:
@@ -144,6 +155,153 @@ class EFGResultsPanel(ResultsPanel[EFGResultsModel]):
             if match:
                 index = int(match.group(2)) - 1
                 self.structure_viewer.displayed_selection = [index]
+
+    # ---------------- quadrupolar spectrum (eqs 2.28-2.33, Fig 2.3) ----------------
+
+    def _quadrupolar_atoms(self):
+        """Labels of atoms with a defined quadrupolar spectrum (I>=1 and nu_Q)."""
+        out = []
+        for label in self._model.atom_labels:
+            p = self._model.quadrupolar_parameters.get(label, {})
+            spin = p.get("I")
+            if p.get("nu_Q") is not None and spin is not None and spin >= 1.0:
+                out.append(label)
+        return out
+
+    def _atom_element(self, label):
+        import re
+        m = re.match(r"([A-Za-z][A-Za-z0-9]*?)(\d+)$", label)
+        if not m or not self._model.structure:
+            return None
+        idx = int(m.group(2)) - 1
+        try:
+            site = self._model.structure.sites[idx]
+            return self._model.structure.get_kind(site.kind_name).symbols[0]
+        except Exception:
+            return None
+
+    def _render_spectrum_section(self):
+        atoms = self._quadrupolar_atoms()
+        if not atoms:
+            return ipw.VBox([ipw.HTML(
+                "<h4>Quadrupolar NMR spectrum</h4>"
+                "<p><i>No quadrupolar-active sites in this structure "
+                "(a spectrum needs I&ge;1 and Q&ne;0).</i></p>"
+            )])
+
+        self._spec_atom = ipw.Dropdown(options=atoms, description="Atom:",
+                                       style={"description_width": "120px"})
+        self._spec_B = ipw.FloatText(value=9.4, description="B field (T):",
+                                     style={"description_width": "120px"})
+        self._spec_gamma = ipw.FloatText(value=0.0, description="|γ| (MHz/T):",
+                                         style={"description_width": "120px"})
+        self._spec_da = ipw.FloatText(value=0.0, description="a:",
+                                      layout=ipw.Layout(width="120px"),
+                                      style={"description_width": "20px"})
+        self._spec_db = ipw.FloatText(value=0.0, description="b:",
+                                      layout=ipw.Layout(width="120px"),
+                                      style={"description_width": "20px"})
+        self._spec_dc = ipw.FloatText(value=1.0, description="c:",
+                                      layout=ipw.Layout(width="120px"),
+                                      style={"description_width": "20px"})
+        self._spec_broad = ipw.FloatText(value=0.0, description="broadening (MHz):",
+                                         style={"description_width": "140px"})
+        self._spec_info = ipw.HTML()
+        self._spec_plot = ipw.Output()
+
+        self._spec_on_atom_change()  # seed gamma/broadening from first atom
+        self._spec_atom.observe(lambda c: self._spec_on_atom_change(), names="value")
+        for w in (self._spec_B, self._spec_gamma, self._spec_da, self._spec_db,
+                  self._spec_dc, self._spec_broad):
+            w.observe(lambda c: self._recompute_spectrum(), names="value")
+        self._recompute_spectrum()
+
+        controls = ipw.VBox([
+            self._spec_atom,
+            ipw.HBox([self._spec_B, self._spec_gamma]),
+            ipw.HTML("<b>Field direction</b> (lattice-vector units, normalised automatically):"),
+            ipw.HBox([self._spec_da, self._spec_db, self._spec_dc]),
+            self._spec_broad,
+            self._spec_info,
+        ])
+        return ipw.VBox([
+            ipw.HTML(
+                "<h4>Quadrupolar NMR spectrum</h4>"
+                "<p>Powder lineshape (orientation average, eqs 2.28–2.33) with the "
+                "single-crystal transition lines for the entered field direction "
+                "overlaid (red). The field strength sets "
+                "ν<sub>L</sub> = |γ|·B; the direction is projected onto the EFG "
+                "principal axes to get (θ, φ).</p>"),
+            controls,
+            self._spec_plot,
+        ])
+
+    def _spec_on_atom_change(self):
+        label = self._spec_atom.value
+        element = self._atom_element(label)
+        gamma = default_gamma(element) if element else None
+        if gamma is not None:
+            self._spec_gamma.value = float(gamma)
+        p = self._model.quadrupolar_parameters.get(label, {})
+        nu_Q = abs(p.get("nu_Q") or 0.0)
+        if self._spec_broad.value == 0.0:
+            self._spec_broad.value = round(max(0.02 * nu_Q, 0.01), 4)
+        self._recompute_spectrum()
+
+    def _recompute_spectrum(self):
+        import plotly.graph_objects as go
+        from IPython.display import display
+
+        label = self._spec_atom.value
+        p = self._model.quadrupolar_parameters.get(label, {})
+        eta = float(p.get("eta") or 0.0)
+        nu_Q = float(p.get("nu_Q") or 0.0)
+        spin_I = float(p.get("I") or 0.0)
+        axes = p.get("eigenvectors") or {}
+        nu_L = abs(float(self._spec_gamma.value)) * float(self._spec_B.value)
+        direction = [self._spec_da.value, self._spec_db.value, self._spec_dc.value]
+        broad = float(self._spec_broad.value) or None
+
+        theta = phi = None
+        try:
+            if self._model.structure and all(k in axes for k in ("Vxx", "Vyy", "Vzz")):
+                theta, phi = lattice_direction_to_angles(
+                    direction, self._model.structure.cell, axes)
+        except Exception:
+            theta = phi = None
+
+        info = (f"ν<sub>L</sub> = |γ|·B = {nu_L:.3f} MHz &nbsp;|&nbsp; "
+                f"ν<sub>Q</sub> = {nu_Q:.4f} MHz &nbsp;|&nbsp; η = {eta:.4f} "
+                f"&nbsp;|&nbsp; I = {spin_I:g}")
+        if theta is not None:
+            info += f" &nbsp;|&nbsp; θ = {np.degrees(theta):.1f}°, φ = {np.degrees(phi):.1f}°"
+        self._spec_info.value = info
+
+        self._spec_plot.clear_output(wait=True)
+        try:
+            freqs, inten = powder_spectrum(nu_Q, eta, spin_I, nu_L, broadening=broad)
+        except Exception as exc:
+            with self._spec_plot:
+                print(f"Could not compute spectrum: {exc}")
+            return
+
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(x=freqs - nu_L, y=inten, mode="lines",
+                                 name="powder", line=dict(color="#1f77b4")))
+        if theta is not None:
+            lines = single_crystal_lines(nu_Q, eta, spin_I, nu_L, theta, phi)
+            wmax = max((w for _, w, _ in lines), default=1.0) or 1.0
+            for freq, weight, m in lines:
+                fig.add_trace(go.Scatter(
+                    x=[freq - nu_L, freq - nu_L], y=[0.0, weight / wmax],
+                    mode="lines", line=dict(color="#d62728", width=2),
+                    showlegend=False, hovertext=f"m: {m-1:g}→{m:g}"))
+        fig.update_layout(
+            xaxis_title="ν − ν_L (MHz)", yaxis_title="intensity (norm.)",
+            height=420, margin=dict(l=50, r=20, t=20, b=50),
+            template="plotly_white", showlegend=False)
+        with self._spec_plot:
+            display(fig)
 
     def _render_structure_view(self):
         import re
