@@ -17,6 +17,9 @@ from ...postprocessing.quadrupolar_spectrum import (
 _TRANSITION_COLORS = ["#17becf", "#9467bd", "#2ca02c", "#ff7f0e",
                       "#e377c2", "#8c564b", "#bcbd22", "#1f77b4", "#d62728"]
 
+# the spectrum frequency axis (nu - nu_L) is plotted in kHz
+_MHZ_TO_KHZ = 1000.0
+
 
 def _half_int_str(x):
     """Format a multiple of 1/2 as a tidy string: 0.5->'1/2', -1.5->'−3/2', 1->'1'."""
@@ -213,7 +216,7 @@ class EFGResultsPanel(ResultsPanel[EFGResultsModel]):
                                      style={"description_width": "120px"})
         self._spec_gamma = ipw.FloatText(value=0.0, description="|γ| (MHz/T):",
                                          style={"description_width": "120px"})
-        self._spec_broad = ipw.FloatText(value=0.0, description="broadening (MHz):",
+        self._spec_broad = ipw.FloatText(value=0.0, description="broadening (kHz):",
                                          style={"description_width": "140px"})
         self._spec_second = ipw.Checkbox(value=True, indent=False,
                                          description="include 2nd-order term (eq 2.29)")
@@ -303,9 +306,10 @@ class EFGResultsPanel(ResultsPanel[EFGResultsModel]):
         if gamma is not None:
             self._spec_gamma.value = float(gamma)
         p = self._model.quadrupolar_parameters.get(label, {})
-        nu_Q = abs(p.get("nu_Q") or 0.0)
+        nu_Q = abs(p.get("nu_Q") or 0.0)  # MHz
         if self._spec_broad.value == 0.0:
-            self._spec_broad.value = round(max(0.02 * nu_Q, 0.01), 4)
+            # default FWHM ~2% of nu_Q, in kHz (min 5 kHz)
+            self._spec_broad.value = round(max(0.02 * nu_Q * _MHZ_TO_KHZ, 5.0), 1)
         self._recompute_spectrum()
 
     def _recompute_spectrum(self):
@@ -318,7 +322,8 @@ class EFGResultsPanel(ResultsPanel[EFGResultsModel]):
         spin_I = float(p.get("I") or 0.0)
         axes = p.get("eigenvectors") or {}
         nu_L = abs(float(self._spec_gamma.value)) * float(self._spec_B.value)
-        broad = float(self._spec_broad.value) or None
+        broad_khz = float(self._spec_broad.value)
+        broad = (broad_khz / _MHZ_TO_KHZ) if broad_khz else None  # backend works in MHz
         second = bool(self._spec_second.value)
 
         base_info = (f"ν<sub>L</sub> = |γ|·B = {nu_L:.3f} MHz &nbsp;|&nbsp; "
@@ -337,19 +342,20 @@ class EFGResultsPanel(ResultsPanel[EFGResultsModel]):
                     # one curve per transition (thesis Fig. 2.3) + total
                     freqs, per, total = powder_spectrum_by_transition(
                         nu_Q, eta, spin_I, nu_L, **kwargs)
-                    fig.add_trace(go.Scatter(x=freqs - nu_L, y=total, mode="lines",
-                                             name="total", line=dict(color="#000000", width=2)))
+                    fig.add_trace(go.Scatter(x=(freqs - nu_L) * _MHZ_TO_KHZ, y=total,
+                                             mode="lines", name="total",
+                                             line=dict(color="#000000", width=2)))
                     for i, (m, inten) in enumerate(per):
                         lbl = f"{_half_int_str(m - 1)}↔{_half_int_str(m)}"
                         fig.add_trace(go.Scatter(
-                            x=freqs - nu_L, y=inten, mode="lines", name=lbl,
+                            x=(freqs - nu_L) * _MHZ_TO_KHZ, y=inten, mode="lines", name=lbl,
                             line=dict(color=_TRANSITION_COLORS[i % len(_TRANSITION_COLORS)],
                                       dash="dash")))
                     show_legend = True
                 else:
                     freqs, inten = powder_spectrum(nu_Q, eta, spin_I, nu_L, **kwargs)
-                    fig.add_trace(go.Scatter(x=freqs - nu_L, y=inten, mode="lines",
-                                             line=dict(color="#1f77b4")))
+                    fig.add_trace(go.Scatter(x=(freqs - nu_L) * _MHZ_TO_KHZ, y=inten,
+                                             mode="lines", line=dict(color="#1f77b4")))
                 scheme = ("Lebedev order %d" % int(self._spec_leb.value)
                           if method == "lebedev" else "%dx%d grid" % (n, n))
                 self._spec_info.value = base_info + f" &nbsp;|&nbsp; {scheme}"
@@ -369,17 +375,17 @@ class EFGResultsPanel(ResultsPanel[EFGResultsModel]):
                                              second_order=second)
                 if broad:
                     gx, gy = broaden_lines(lines, broad)
-                    fig.add_trace(go.Scatter(x=gx - nu_L, y=gy, mode="lines",
+                    fig.add_trace(go.Scatter(x=(gx - nu_L) * _MHZ_TO_KHZ, y=gy, mode="lines",
                                              line=dict(color="#1f77b4")))
                 wmax = max((w for _, w, _ in lines), default=1.0) or 1.0
                 for freq, weight, m in lines:
-                    x0 = freq - nu_L
+                    x0 = (freq - nu_L) * _MHZ_TO_KHZ
                     height = weight / wmax
                     label = f"{_half_int_str(m - 1)}↔{_half_int_str(m)}"
                     fig.add_trace(go.Scatter(
                         x=[x0, x0], y=[0.0, height], mode="lines",
                         line=dict(color="#d62728", width=2), showlegend=False,
-                        hoverinfo="text", hovertext=f"{label}  ({freq:.4f} MHz)"))
+                        hoverinfo="text", hovertext=f"{label}  (Δν = {x0:.2f} kHz)"))
                     fig.add_trace(go.Scatter(
                         x=[x0], y=[height], mode="markers+text",
                         marker=dict(color="#d62728", size=4),
@@ -394,7 +400,7 @@ class EFGResultsPanel(ResultsPanel[EFGResultsModel]):
             return
 
         fig.update_layout(
-            xaxis_title="ν − ν_L (MHz)", yaxis_title="intensity (norm.)",
+            xaxis_title="ν − ν_L (kHz)", yaxis_title="intensity (norm.)",
             height=420, margin=dict(l=50, r=20, t=20, b=50),
             template="plotly_white", showlegend=show_legend)
         self._spec_plot.children = [go.FigureWidget(fig)]
