@@ -68,6 +68,11 @@ RUN PIP_USER=0 pip install --no-cache-dir -e /opt/aiida-qe-converse
 # load errors in the app.
 RUN PIP_USER=0 pip uninstall -y aiidalab-qe-muon aiidalab-qe-vibroscopy || true
 
+# Optional 'upf_tools' dependency: aiidalab-qe's Advanced > Pseudopotentials tab
+# parses UPF metadata with it. The base image omits it, which raises a
+# (non-fatal) error when that tab renders -- install it to keep the UI clean.
+RUN PIP_USER=0 pip install --no-cache-dir upf-tools
+
 # Disable the HyperQueue startup hook; we use the direct scheduler on localhost
 # (set in the registration hook below).
 RUN rm -f /usr/local/bin/before-notebook.d/43_start-hq.sh
