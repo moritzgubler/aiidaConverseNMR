@@ -1,0 +1,16 @@
+# qe-converse.x (QE-CONVERSE 7.5) on the Merlin7 CPU partition.
+#
+# Install (the `merlin7-cpu` computer must already exist -- see README.md):
+#   verdi code create core.code.installed --non-interactive --config qe-converse.yml
+label: qe-converse
+description: qe-converse.x (QE-CONVERSE 7.5, built against QE 7.5) on merlin7-cpu
+computer: merlin7-cpu
+filepath_executable: /data/user/gubler_m/src/QE-CONVERSE-7.5/src/qe-converse.x
+default_calc_job_plugin: qeconverse
+use_double_quotes: false
+with_mpi: true
+prepend_text: |
+  module use /data/user/gubler_m/modulefiles/
+  module load qe/7.5
+  module load qe-converse/7.5
+append_text: ''
