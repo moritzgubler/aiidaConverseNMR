@@ -26,12 +26,15 @@ upstream in the registry; only the EFG/NMR **codes** are specific to this plugin
 
 ## 2. Install the codes
 
-With `merlin7-cpu` configured, create the three codes from the YAMLs here:
+With `merlin7-cpu` configured, create the three codes from the YAMLs. In the
+deployment image they are baked in at
+`/opt/aiida-qe-converse/examples/codes/merlin/`, so run inside the container:
 
 ```bash
-verdi code create core.code.installed --non-interactive --config pw-7.5.yml
-verdi code create core.code.installed --non-interactive --config qe-converse.yml
-verdi code create core.code.installed --non-interactive --config qe-efg.yml
+CFG=/opt/aiida-qe-converse/examples/codes/merlin
+verdi code create core.code.installed --non-interactive --config $CFG/pw-7.5.yml
+verdi code create core.code.installed --non-interactive --config $CFG/qe-converse.yml
+verdi code create core.code.installed --non-interactive --config $CFG/qe-efg.yml
 ```
 
 This gives you `pw-7.5@merlin7-cpu`, `qe-converse@merlin7-cpu` and
