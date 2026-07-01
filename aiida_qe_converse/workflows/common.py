@@ -55,7 +55,7 @@ PROTOCOLS = {
         'num_machines': 1,
         'num_mpiprocs_per_machine': 32,
         'max_wallclock_seconds': 3600 * 23,
-        'max_memory_kb': 500000000,
+        'max_memory_kb': 480000000,
     },
 }
 
