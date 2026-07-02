@@ -4,7 +4,8 @@ import ipywidgets as ipw
 from aiidalab_qe.common.panel import ResultsPanel
 from aiidalab_widgets_base.viewers import StructureDataViewer
 from .model import EFGResultsModel
-from ...data.nuclear import default_gamma, larmor_frequency
+from ...data.nuclear import default_gamma, default_q_i, larmor_frequency
+from ...postprocessing.efg_analysis import quadrupolar_parameters_from_tensor
 from ...postprocessing.quadrupolar_spectrum import (
     powder_spectrum,
     powder_spectrum_by_transition,
@@ -53,17 +54,24 @@ class EFGResultsPanel(ResultsPanel[EFGResultsModel]):
         title = ipw.HTML(
             """
             <h3>Electric Field Gradient Results</h3>
-            <p>Per-atom quadrupolar parameters from the symmetrized EFG tensor.</p>
+            <p>Per-atom quadrupolar parameters, <b>recomputed live from the stored
+            symmetrized EFG tensor</b> — the tensor does not depend on Q or I, so you
+            can adjust the nuclear quadrupole moment Q and spin I (e.g. to switch
+            isotope) in the spectrum section below without re-running the calculation.</p>
             <ul>
               <li><b>V<sub>zz</sub></b>: largest-|eigenvalue| EFG principal value (Ha/bohr&sup2;)</li>
               <li><b>&eta;</b> = (V<sub>xx</sub> &minus; V<sub>yy</sub>) / V<sub>zz</sub></li>
               <li><b>C<sub>q</sub></b> = e Q V<sub>zz</sub> / h (MHz; only for Q &ne; 0)</li>
-              <li><b>&nu;<sub>Q</sub></b> = 3 C<sub>q</sub> / (2I(2I&minus;1)) (MHz; only for I &ge; 1)</li>
+              <li><b>&nu;<sub>Q</sub></b> = 3 C<sub>q</sub> / (2I(2I&minus;1)) (MHz; only for Q &ne; 0 and I &ge; 1)</li>
             </ul>
             """
         )
 
-        widgets = [title, self._render_summary_table()]
+        self._init_qi_by_atom()
+        self._summary_table = ipw.HTML()
+        self._refresh_summary_table()
+
+        widgets = [title, self._summary_table]
 
         tensor_widget = self._render_tensor_components()
         if tensor_widget:
@@ -86,26 +94,65 @@ class EFGResultsPanel(ResultsPanel[EFGResultsModel]):
 
         self.results_container.children = widgets
 
-    def _render_summary_table(self):
-        if not self._model.table_data:
-            return ipw.HTML("<p>No quadrupolar data available.</p>")
+    # ---- live recomputation from the stored EFG tensor with per-atom Q/I ----
+
+    def _init_qi_by_atom(self):
+        """Seed per-atom (Q, I): from the values used at submission, else defaults."""
+        self._qi_by_atom = {}
+        for label in self._model.atom_labels:
+            stored = self._model.quadrupolar_parameters.get(label, {})
+            q, spin = stored.get("Q"), stored.get("I")
+            if q is None or spin is None:
+                element = self._atom_element(label)
+                dq, di = default_q_i(element) if element else (0.0, 0.0)
+                q = dq if q is None else q
+                spin = di if spin is None else spin
+            self._qi_by_atom[label] = (float(q), float(spin))
+
+    def _current_qp(self, label):
+        """Quadrupolar parameters for ``label``, recomputed from its tensor."""
+        tensor = self._model.efg_tensors.get(label)
+        if tensor is None:
+            return None
+        q, spin = self._qi_by_atom.get(label, (0.0, 0.0))
+        qp = quadrupolar_parameters_from_tensor(tensor, q, spin)
+        qp["Q"], qp["I"] = q, spin
+        return qp
+
+    def _refresh_summary_table(self):
+        rows_html = ""
+        for label in self._model.atom_labels:
+            qp = self._current_qp(label)
+            if qp is None:  # no tensor stored (legacy run): fall back to parsed values
+                qp = dict(self._model.quadrupolar_parameters.get(label, {}))
+            cells = [
+                label,
+                self._model._fmt(qp.get("Q")),
+                self._model._fmt(qp.get("I"), 1),
+                self._model._fmt(qp.get("Vzz")),
+                self._model._fmt(qp.get("eta"), 5),
+                self._model._fmt(qp.get("Cq")),
+                self._model._fmt(qp.get("nu_Q")),
+            ]
+            rows_html += "<tr>" + "".join(
+                f"<td style='padding: 8px; border: 1px solid #ddd; text-align: "
+                f"{'center' if i == 0 else 'right'};'>{c}</td>"
+                for i, c in enumerate(cells)
+            ) + "</tr>"
+
+        if not rows_html:
+            self._summary_table.value = "<p>No quadrupolar data available.</p>"
+            return
 
         html = "<h4>Quadrupolar Parameter Summary</h4>"
         html += "<table style='border-collapse: collapse; width: 100%; margin: 10px 0;'>"
         html += "<tr style='background-color: #f0f0f0;'>"
-        for header in ["Atom", "V<sub>zz</sub>", "&eta;", "C<sub>q</sub> (MHz)", "&nu;<sub>Q</sub> (MHz)"]:
+        for header in ["Atom", "Q (10&#8315;&sup3;&#8304; m&sup2;)", "I",
+                       "V<sub>zz</sub> (Ha/bohr&sup2;)", "&eta;",
+                       "C<sub>q</sub> (MHz)", "&nu;<sub>Q</sub> (MHz)"]:
             html += f"<th style='padding: 8px; border: 1px solid #ddd; text-align: center;'>{header}</th>"
-        html += "</tr>"
-        for row in self._model.table_data:
-            html += "<tr>"
-            html += f"<td style='padding: 8px; border: 1px solid #ddd; text-align: center;'>{row['Atom']}</td>"
-            html += f"<td style='padding: 8px; border: 1px solid #ddd; text-align: right;'>{row['Vzz']}</td>"
-            html += f"<td style='padding: 8px; border: 1px solid #ddd; text-align: right;'>{row['eta']}</td>"
-            html += f"<td style='padding: 8px; border: 1px solid #ddd; text-align: right;'>{row['Cq']}</td>"
-            html += f"<td style='padding: 8px; border: 1px solid #ddd; text-align: right;'>{row['nu_Q']}</td>"
-            html += "</tr>"
-        html += "</table>"
-        return ipw.HTML(html)
+        html += "</tr>" + rows_html + "</table>"
+        self._summary_table.value = html
 
     def _render_tensor_components(self):
         if not self._model.efg_tensors:
@@ -138,7 +185,7 @@ class EFGResultsPanel(ResultsPanel[EFGResultsModel]):
             return
 
         tensor = self._model.efg_tensors[atom_label]
-        params = self._model.quadrupolar_parameters.get(atom_label, {})
+        params = self._current_qp(atom_label) or self._model.quadrupolar_parameters.get(atom_label, {})
 
         html = f"<h5>EFG Tensor for {atom_label} (Ha/bohr&sup2;)</h5>"
         detail = []
@@ -146,7 +193,7 @@ class EFGResultsPanel(ResultsPanel[EFGResultsModel]):
                            ("Vzz", "V<sub>zz</sub>"), ("eta", "&eta;"),
                            ("Cq", "C<sub>q</sub> (MHz)"), ("nu_Q", "&nu;<sub>Q</sub> (MHz)")]:
             if key in params and params[key] is not None:
-                detail.append(f"{label} = {params[key]}")
+                detail.append(f"{label} = {self._model._fmt(params[key])}")
         if detail:
             html += "<p>" + " &nbsp;|&nbsp; ".join(detail) + "</p>"
 
@@ -175,14 +222,9 @@ class EFGResultsPanel(ResultsPanel[EFGResultsModel]):
     # ---------------- quadrupolar spectrum (eqs 2.28-2.33, Fig 2.3) ----------------
 
     def _quadrupolar_atoms(self):
-        """Labels of atoms with a defined quadrupolar spectrum (I>=1 and nu_Q)."""
-        out = []
-        for label in self._model.atom_labels:
-            p = self._model.quadrupolar_parameters.get(label, {})
-            spin = p.get("I")
-            if p.get("nu_Q") is not None and spin is not None and spin >= 1.0:
-                out.append(label)
-        return out
+        """Labels of atoms with a stored EFG tensor (Q and I are adjustable live)."""
+        return [label for label in self._model.atom_labels
+                if label in self._model.efg_tensors]
 
     def _atom_element(self, label):
         import re
@@ -201,8 +243,7 @@ class EFGResultsPanel(ResultsPanel[EFGResultsModel]):
         if not atoms:
             return ipw.VBox([ipw.HTML(
                 "<h4>Quadrupolar NMR spectrum</h4>"
-                "<p><i>No quadrupolar-active sites in this structure "
-                "(a spectrum needs I&ge;1 and Q&ne;0).</i></p>"
+                "<p><i>No EFG tensors stored for this calculation.</i></p>"
             )])
 
         self._spec_mode = ipw.ToggleButtons(
@@ -216,6 +257,10 @@ class EFGResultsPanel(ResultsPanel[EFGResultsModel]):
                                      style={"description_width": "120px"})
         self._spec_gamma = ipw.FloatText(value=0.0, description="|γ| (MHz/T):",
                                          style={"description_width": "120px"})
+        self._spec_Q = ipw.FloatText(value=0.0, description="Q (10⁻³⁰ m²):",
+                                     style={"description_width": "120px"})
+        self._spec_I = ipw.FloatText(value=0.0, description="I:",
+                                     style={"description_width": "120px"})
         self._spec_broad = ipw.FloatText(value=0.0, description="broadening (kHz):",
                                          style={"description_width": "140px"})
         self._spec_second = ipw.Checkbox(value=True, indent=False,
@@ -257,12 +302,15 @@ class EFGResultsPanel(ResultsPanel[EFGResultsModel]):
         # Container holding a plotly FigureWidget (display(fig) does not render here).
         self._spec_plot = ipw.VBox()
 
-        self._spec_on_atom_change()         # seed gamma/broadening
+        self._spec_updating = False
+        self._spec_on_atom_change()         # seed gamma/Q/I/broadening
         self._update_spectrum_visibility()  # show the right controls for the mode
 
         self._spec_atom.observe(lambda c: self._spec_on_atom_change(), names="value")
         self._spec_mode.observe(lambda c: self._update_spectrum_visibility(), names="value")
         self._spec_method.observe(lambda c: self._update_spectrum_visibility(), names="value")
+        for w in (self._spec_Q, self._spec_I):
+            w.observe(lambda c: self._on_qi_change(), names="value")
         for w in (self._spec_B, self._spec_gamma, self._spec_broad, self._spec_npts,
                   self._spec_leb, self._spec_da, self._spec_db, self._spec_dc,
                   self._spec_second, self._spec_decompose):
@@ -273,6 +321,7 @@ class EFGResultsPanel(ResultsPanel[EFGResultsModel]):
             self._spec_mode,
             self._spec_atom,
             ipw.HBox([self._spec_B, self._spec_gamma]),
+            ipw.HBox([self._spec_Q, self._spec_I]),
             self._spec_powder_box,
             self._spec_single_box,
             ipw.HBox([self._spec_broad, self._spec_second]),
@@ -285,7 +334,10 @@ class EFGResultsPanel(ResultsPanel[EFGResultsModel]):
                 "independent of direction — pick an equal-area grid or Lebedev "
                 "quadrature. <b>Single crystal</b>: discrete transition lines for a "
                 "fixed field direction, projected onto the EFG principal axes to get "
-                "(θ, φ). The field strength sets ν<sub>L</sub> = |γ|·B.</p>"),
+                "(θ, φ). The field strength sets ν<sub>L</sub> = |γ|·B. "
+                "<b>Q and I are adjustable</b> (e.g. to switch isotope): η, C<sub>q</sub> "
+                "and ν<sub>Q</sub> are recomputed live from the stored EFG tensor — "
+                "the tensor itself does not depend on them.</p>"),
             controls,
             self._spec_plot,
         ])
@@ -301,34 +353,69 @@ class EFGResultsPanel(ResultsPanel[EFGResultsModel]):
 
     def _spec_on_atom_change(self):
         label = self._spec_atom.value
-        element = self._atom_element(label)
-        gamma = default_gamma(element) if element else None
-        if gamma is not None:
-            self._spec_gamma.value = float(gamma)
-        p = self._model.quadrupolar_parameters.get(label, {})
-        nu_Q = abs(p.get("nu_Q") or 0.0)  # MHz
-        if self._spec_broad.value == 0.0:
-            # default FWHM ~2% of nu_Q, in kHz (min 5 kHz)
-            self._spec_broad.value = round(max(0.02 * nu_Q * _MHZ_TO_KHZ, 5.0), 1)
+        self._spec_updating = True
+        try:
+            element = self._atom_element(label)
+            gamma = default_gamma(element) if element else None
+            if gamma is not None:
+                self._spec_gamma.value = float(gamma)
+            q, spin = self._qi_by_atom.get(label, (0.0, 0.0))
+            self._spec_Q.value = q
+            self._spec_I.value = spin
+            qp = self._current_qp(label) or {}
+            nu_Q = abs(qp.get("nu_Q") or 0.0)  # MHz
+            if self._spec_broad.value == 0.0:
+                # default FWHM ~2% of nu_Q, in kHz (min 5 kHz)
+                self._spec_broad.value = round(max(0.02 * nu_Q * _MHZ_TO_KHZ, 5.0), 1)
+        finally:
+            self._spec_updating = False
+        self._recompute_spectrum()
+
+    def _on_qi_change(self):
+        """User edited Q or I: store per atom, refresh table/details/spectrum."""
+        if self._spec_updating:
+            return
+        label = self._spec_atom.value
+        self._qi_by_atom[label] = (float(self._spec_Q.value), float(self._spec_I.value))
+        self._refresh_summary_table()
+        if hasattr(self, "atom_selector") and self.atom_selector.value:
+            self._update_tensor_display({"new": self.atom_selector.value})
         self._recompute_spectrum()
 
     def _recompute_spectrum(self):
         import plotly.graph_objects as go
 
+        if self._spec_updating:
+            return
         label = self._spec_atom.value
-        p = self._model.quadrupolar_parameters.get(label, {})
-        eta = float(p.get("eta") or 0.0)
-        nu_Q = float(p.get("nu_Q") or 0.0)
-        spin_I = float(p.get("I") or 0.0)
-        axes = p.get("eigenvectors") or {}
+        qp = self._current_qp(label)
+        if qp is None:
+            self._spec_plot.children = [ipw.HTML("<i>No EFG tensor stored for this atom.</i>")]
+            self._spec_info.value = ""
+            return
+        eta = float(qp["eta"])
+        cq = qp.get("Cq")
+        nu_Q = float(qp.get("nu_Q") or 0.0)
+        spin_I = float(self._spec_I.value)
+        axes = qp["eigenvectors"]
         nu_L = abs(float(self._spec_gamma.value)) * float(self._spec_B.value)
         broad_khz = float(self._spec_broad.value)
         broad = (broad_khz / _MHZ_TO_KHZ) if broad_khz else None  # backend works in MHz
         second = bool(self._spec_second.value)
 
         base_info = (f"ν<sub>L</sub> = |γ|·B = {nu_L:.3f} MHz &nbsp;|&nbsp; "
-                     f"ν<sub>Q</sub> = {nu_Q:.4f} MHz &nbsp;|&nbsp; η = {eta:.4f} "
-                     f"&nbsp;|&nbsp; I = {spin_I:g}")
+                     f"V<sub>zz</sub> = {qp['Vzz']:.4f} Ha/bohr² &nbsp;|&nbsp; "
+                     f"η = {eta:.4f} &nbsp;|&nbsp; "
+                     + (f"C<sub>q</sub> = {cq:.4f} MHz &nbsp;|&nbsp; " if cq is not None else "")
+                     + f"ν<sub>Q</sub> = {nu_Q:.4f} MHz &nbsp;|&nbsp; I = {spin_I:g}")
+
+        if spin_I < 1.0:
+            self._spec_plot.children = [ipw.HTML(
+                "<i>A quadrupolar spectrum needs I ≥ 1 — adjust I above "
+                "(spin-1/2 isotopes have no quadrupole interaction).</i>")]
+            self._spec_info.value = base_info
+            return
+
         fig = go.Figure()
         show_legend = False
 
@@ -428,10 +515,16 @@ class EFGResultsPanel(ResultsPanel[EFGResultsModel]):
         import json
         from datetime import datetime
 
+        recomputed = {
+            label: self._current_qp(label)
+            for label in self._model.atom_labels
+            if self._current_qp(label) is not None
+        }
         results_data = {
             "calculation_date": datetime.now().isoformat(),
             "workchain_label": self.identifier,
-            "quadrupolar_parameters": self._model.quadrupolar_parameters,
+            "quadrupolar_parameters_as_computed": self._model.quadrupolar_parameters,
+            "quadrupolar_parameters_recomputed": recomputed,
             "efg_tensors": self._model.efg_tensors,
             "atom_labels": self._model.atom_labels,
         }
