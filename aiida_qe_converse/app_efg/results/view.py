@@ -117,6 +117,19 @@ class EFGResultsPanel(ResultsPanel[EFGResultsModel]):
         q, spin = self._qi_by_atom.get(label, (0.0, 0.0))
         qp = quadrupolar_parameters_from_tensor(tensor, q, spin)
         qp["Q"], qp["I"] = q, spin
+        # eigenvectors also in lattice coordinates: v = d1*a1 + d2*a2 + d3*a3,
+        # scaled so the largest |component| is 1 (direction-index style)
+        if self._model.structure is not None:
+            try:
+                inv_cell = np.linalg.inv(np.array(self._model.structure.cell))
+                lattice = {}
+                for key, vec in qp["eigenvectors"].items():
+                    d = np.array(vec) @ inv_cell
+                    peak = np.max(np.abs(d))
+                    lattice[key] = (d / peak).tolist() if peak > 0 else d.tolist()
+                qp["eigenvectors_lattice"] = lattice
+            except Exception:
+                pass
         return qp
 
     def _refresh_summary_table(self):
@@ -211,6 +224,35 @@ class EFGResultsPanel(ResultsPanel[EFGResultsModel]):
                 html += f"<td style='padding: 8px; border: 1px solid #ddd; text-align: right;'>{value:.6f}</td>"
             html += "</tr>"
         html += "</table>"
+
+        # principal axes: eigenvectors in Cartesian and lattice coordinates
+        eig = params.get("eigenvectors") or {}
+        eig_lat = params.get("eigenvectors_lattice") or {}
+        if eig:
+            html += "<h5>Principal axes (eigenvectors)</h5>"
+            html += ("<p>Cartesian: unit vectors in the same frame as the tensor. "
+                     "Lattice: coefficients (d<sub>a</sub>, d<sub>b</sub>, d<sub>c</sub>) with "
+                     "v = d<sub>a</sub>·a + d<sub>b</sub>·b + d<sub>c</sub>·c, scaled so the "
+                     "largest |component| is 1.</p>")
+            html += "<table style='border-collapse: collapse; margin: 10px 0;'>"
+            html += "<tr style='background-color: #f0f0f0;'>"
+            for col in ["", "value (Ha/bohr&sup2;)", "Cartesian (x, y, z)", "lattice (a, b, c)"]:
+                html += f"<th style='padding: 8px; border: 1px solid #ddd;'>{col}</th>"
+            html += "</tr>"
+            for key, name in [("Vxx", "V<sub>xx</sub>"), ("Vyy", "V<sub>yy</sub>"), ("Vzz", "V<sub>zz</sub>")]:
+                if key not in eig:
+                    continue
+                cart = ", ".join(f"{c:.4f}" for c in eig[key])
+                lat = (", ".join(f"{c:.4f}" for c in eig_lat[key])
+                       if key in eig_lat else "&mdash;")
+                value = self._model._fmt(params.get(key))
+                html += ("<tr>"
+                         f"<th style='padding: 8px; border: 1px solid #ddd; background-color: #f0f0f0;'>{name}</th>"
+                         f"<td style='padding: 8px; border: 1px solid #ddd; text-align: right;'>{value}</td>"
+                         f"<td style='padding: 8px; border: 1px solid #ddd; text-align: right;'>({cart})</td>"
+                         f"<td style='padding: 8px; border: 1px solid #ddd; text-align: right;'>({lat})</td>"
+                         "</tr>")
+            html += "</table>"
         self.tensor_display.value = html
 
         if hasattr(self, 'structure_viewer'):
