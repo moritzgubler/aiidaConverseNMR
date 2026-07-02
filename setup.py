@@ -22,6 +22,7 @@ setup(
     entry_points={
         'console_scripts': [
             'nmr-converse = aiida_qe_converse.run_nmr_workchain:cli',
+            'aiida-qe-converse-setup = aiida_qe_converse.provision:cli',
         ],
         'aiida.calculations': [
             'qeconverse = aiida_qe_converse.calculations.qeconverse:QeConverseCalculation',
@@ -40,9 +41,6 @@ setup(
         'aiidalab_qe.properties': [
             "qeconverse = aiida_qe_converse.app:property",
             "qeefg = aiida_qe_converse.app_efg:property",
-        ],
-        'console_scripts': [
-            'aiida-qe-converse-setup = aiida_qe_converse.provision:cli',
         ],
     },
 )
