@@ -19,8 +19,7 @@ from .workchain import workchain_and_builder
 class EFGPluginOutline(PluginOutline):
     """Outline for the EFG plugin."""
 
-    title = "EFG"
-    description = "Compute EFG tensors and NMR/NQR quadrupolar parameters (Cq, eta, nu_Q)"
+    title = "EFG / NQR quadrupolar parameters"
 
 
 property = {
