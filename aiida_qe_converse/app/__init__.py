@@ -17,8 +17,7 @@ from pathlib import Path
 class NMRPluginOutline(PluginOutline):
     """Outline for NMR Converse plugin."""
 
-    title = "NMR"
-    description = "Compute NMR chemical shifts using the converse approach"
+    title = "NMR chemical shifts (converse approach)"
 
 
 property = {
