@@ -1,8 +1,10 @@
 """
 Configuration model for the EFG plugin.
 
-Reuses the shared per-atom selection model and adds a ``nuclear_data`` override
-trait (per-element Q in 1e-30 m^2 and spin I).
+Subclasses the shared atom-selection model for its structure tracking
+(``atom_info``) and ``pseudo_family`` traits, and adds a ``nuclear_data``
+override trait (per-element Q in 1e-30 m^2 and spin I). The per-atom
+selection itself is not exposed: qe-efg.x computes all atoms in one run.
 """
 from traitlets import Dict
 
@@ -20,9 +22,13 @@ class EFGConfigurationSettingsModel(AtomSelectionConfigModel):
     nuclear_data = Dict({})
 
     def get_model_state(self):
-        state = super().get_model_state()
-        state["nuclear_data"] = self.nuclear_data
-        return state
+        # No atom selection for EFG: qe-efg.x always computes all atoms, so
+        # target_atoms/atom_selection are deliberately not serialized (the
+        # workchain treats a missing target_atoms as "all atoms").
+        return {
+            "pseudo_family": self.pseudo_family,
+            "nuclear_data": self.nuclear_data,
+        }
 
     def set_model_state(self, parameters):
         super().set_model_state(parameters)

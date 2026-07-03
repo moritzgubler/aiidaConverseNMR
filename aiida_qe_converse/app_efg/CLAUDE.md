@@ -9,19 +9,24 @@ API pitfalls (traits vs properties, FigureWidget, protocol aliases).
 
 ## configuration/
 
-- Model extends the shared `AtomSelectionConfigModel`: adds `nuclear_data`
-  (per-element `{"Q": .., "I": ..}` overrides) and inherits `pseudo_family`
-  (GIPAW library dropdown) and `target_atoms`. `get_model_state`/`set_model_state`
-  must include every trait the builder needs — the framework serializes only that.
-- View = shared atom-selection table + GIPAW pseudo section (info note that the
-  Advanced-step pseudo family is IGNORED, per-element preview, MISSING warning)
-  + editable per-element Q/I table seeded from `data/nuclear.py` defaults.
+- Model extends the shared `AtomSelectionConfigModel` (for structure tracking /
+  `atom_info` and `pseudo_family`): adds `nuclear_data` (per-element
+  `{"Q": .., "I": ..}` overrides). **No atom selection is exposed or
+  serialized** — qe-efg.x computes all atoms in one run, and the workchain
+  treats a missing `target_atoms` as "all atoms". `get_model_state`/
+  `set_model_state` must include every trait the builder needs — the framework
+  serializes only that.
+- View = GIPAW pseudo section (info note that the Advanced-step pseudo family
+  is IGNORED, per-element preview, MISSING warning) + editable per-element Q/I
+  table seeded from `data/nuclear.py` defaults. The shared atom-selection
+  table is deliberately not rendered.
 
 ## workchain.py
 
 `get_builder(codes, structure, parameters)` maps GUI state to
 `EfgWorkChain.get_builder_from_protocol`. Parameters arrive under the entry
-point name: `parameters["qeefg"]` (target_atoms, nuclear_data, pseudo_family);
+point name: `parameters["qeefg"]` (nuclear_data, pseudo_family; a legacy
+target_atoms is still honored, absence means all atoms);
 protocol under `parameters["workchain"]["protocol"]` in **GUI names**
 (`balanced`/`stringent` — aliased in `workflows/common.py`). Codes arrive as
 `codes["pw_efg"]["code"]` / `codes["qeefg"]["code"]` (keys = the names given in

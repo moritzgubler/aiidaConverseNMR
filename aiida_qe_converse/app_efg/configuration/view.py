@@ -1,6 +1,7 @@
 """
-Configuration panel for the EFG plugin: atom selection (shared base) plus a
-per-element Q / I override table seeded from the built-in nuclear-data table.
+Configuration panel for the EFG plugin: GIPAW pseudo section (shared base)
+plus a per-element Q / I override table seeded from the built-in nuclear-data
+table. No per-atom selection — qe-efg.x computes all atoms in one cheap run.
 """
 import ipywidgets as ipw
 
@@ -27,7 +28,8 @@ class EFGConfigurationSettingPanel(AtomSelectionConfigPanel):
                 not self._model.atom_info):
             self._model._on_input_structure_change({"new": self._model.input_structure})
 
-        atom_selection_container = self._render_atom_selection()
+        # No atom-selection UI: qe-efg.x computes the EFG tensor for all
+        # atoms in a single run, so there is nothing to save by picking sites.
         pseudo_container = self._render_pseudo_section()
         nuclear_data_container = self._render_nuclear_data()
 
@@ -35,7 +37,6 @@ class EFGConfigurationSettingPanel(AtomSelectionConfigPanel):
         self._model.observe(lambda _: self._update_nuclear_table(), "atom_info")
 
         self.children = [
-            atom_selection_container,
             pseudo_container,
             nuclear_data_container,
         ]
