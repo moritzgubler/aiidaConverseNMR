@@ -4,7 +4,13 @@ import ipywidgets as ipw
 from aiidalab_qe.common.panel import ResultsPanel
 from aiidalab_widgets_base.viewers import StructureDataViewer
 from .model import EFGResultsModel
-from ...data.nuclear import default_gamma, default_q_i, larmor_frequency
+from ...data.nuclear import (
+    default_gamma,
+    default_q_i,
+    isotope_entry,
+    isotopes_for,
+    larmor_frequency,
+)
 from ...postprocessing.efg_analysis import quadrupolar_parameters_from_tensor
 from ...postprocessing.quadrupolar_spectrum import (
     powder_spectrum,
@@ -56,8 +62,8 @@ class EFGResultsPanel(ResultsPanel[EFGResultsModel]):
             <h3>Electric Field Gradient Results</h3>
             <p>Per-atom quadrupolar parameters, <b>recomputed live from the stored
             symmetrized EFG tensor</b> — the tensor does not depend on Q or I, so you
-            can adjust the nuclear quadrupole moment Q and spin I (e.g. to switch
-            isotope) in the spectrum section below without re-running the calculation.</p>
+            can switch isotope (or enter custom Q and I) in the spectrum section
+            below without re-running the calculation.</p>
             <ul>
               <li><b>V<sub>zz</sub></b>: largest-|eigenvalue| EFG principal value (Ha/bohr&sup2;)</li>
               <li><b>&eta;</b> = (V<sub>xx</sub> &minus; V<sub>yy</sub>) / V<sub>zz</sub></li>
@@ -295,6 +301,10 @@ class EFGResultsPanel(ResultsPanel[EFGResultsModel]):
         )
         self._spec_atom = ipw.Dropdown(options=atoms, description="Atom:",
                                        style={"description_width": "120px"})
+        self._spec_isotope = ipw.Dropdown(options=["custom"], value="custom",
+                                          description="Isotope:",
+                                          style={"description_width": "120px"},
+                                          layout=ipw.Layout(width="240px"))
         self._spec_B = ipw.FloatText(value=9.4, description="B field (T):",
                                      style={"description_width": "120px"})
         self._spec_gamma = ipw.FloatText(value=0.0, description="|γ| (MHz/T):",
@@ -349,6 +359,7 @@ class EFGResultsPanel(ResultsPanel[EFGResultsModel]):
         self._update_spectrum_visibility()  # show the right controls for the mode
 
         self._spec_atom.observe(lambda c: self._spec_on_atom_change(), names="value")
+        self._spec_isotope.observe(lambda c: self._spec_on_isotope_change(), names="value")
         self._spec_mode.observe(lambda c: self._update_spectrum_visibility(), names="value")
         self._spec_method.observe(lambda c: self._update_spectrum_visibility(), names="value")
         for w in (self._spec_Q, self._spec_I):
@@ -361,7 +372,7 @@ class EFGResultsPanel(ResultsPanel[EFGResultsModel]):
 
         controls = ipw.VBox([
             self._spec_mode,
-            self._spec_atom,
+            ipw.HBox([self._spec_atom, self._spec_isotope]),
             ipw.HBox([self._spec_B, self._spec_gamma]),
             ipw.HBox([self._spec_Q, self._spec_I]),
             self._spec_powder_box,
@@ -372,14 +383,31 @@ class EFGResultsPanel(ResultsPanel[EFGResultsModel]):
         return ipw.VBox([
             ipw.HTML(
                 "<h4>Quadrupolar NMR spectrum</h4>"
-                "<p><b>Powder</b>: average over all field orientations (eqs 2.28–2.33), "
-                "independent of direction — pick an equal-area grid or Lebedev "
-                "quadrature. <b>Single crystal</b>: discrete transition lines for a "
-                "fixed field direction, projected onto the EFG principal axes to get "
-                "(θ, φ). The field strength sets ν<sub>L</sub> = |γ|·B. "
-                "<b>Q and I are adjustable</b> (e.g. to switch isotope): η, C<sub>q</sub> "
-                "and ν<sub>Q</sub> are recomputed live from the stored EFG tensor — "
-                "the tensor itself does not depend on them.</p>"),
+                "<p><b>Powder</b>: average over all field orientations "
+                "(eqs 2.28–2.33), independent of direction — pick an equal-area "
+                "grid or Lebedev quadrature.</p>"
+                "<p><b>Single crystal</b>: discrete transition lines for a fixed "
+                "field direction, projected onto the EFG principal axes to get "
+                "(θ, φ). The field strength sets ν<sub>L</sub> = |γ|·B.</p>"
+                "<p><b>Pick an isotope</b> to seed Q, I and γ from the built-in "
+                "table, or edit them freely (= <i>custom</i>): η, C<sub>q</sub> and "
+                "ν<sub>Q</sub> are recomputed live from the stored EFG tensor — the "
+                "tensor itself does not depend on them.</p>"
+                "<p style='font-size:0.9em;color:#666;'>Equation numbers "
+                "refer to "
+                "<a href='https://repozitorij.uni-lj.si/IzpisGradiva.php?id=159093&amp;lang=eng' "
+                "target='_blank'>T. Arh, <i>Stability of quantum spin liquids in "
+                "two dimensions</i>, doctoral dissertation, University of "
+                "Ljubljana (2024)</a>.<br>"
+                "Isotope data: "
+                "Q from P. Pyykk&ouml;, <i>Year-2017 nuclear quadrupole moments</i>, "
+                "Mol. Phys. 116, 1328 (2018), "
+                "<a href='https://doi.org/10.1080/00268976.2018.1426131' "
+                "target='_blank'>doi:10.1080/00268976.2018.1426131</a>; "
+                "spins I and γ from R. K. Harris et al., <i>NMR nomenclature</i> "
+                "(IUPAC Recommendations 2001), Pure Appl. Chem. 73, 1795 (2001), "
+                "<a href='https://doi.org/10.1351/pac200173111795' "
+                "target='_blank'>doi:10.1351/pac200173111795</a>.</p>"),
             controls,
             self._spec_plot,
         ])
@@ -393,17 +421,32 @@ class EFGResultsPanel(ResultsPanel[EFGResultsModel]):
         self._spec_leb.layout.display = "inline-flex" if lebedev else "none"
         self._recompute_spectrum()
 
+    @staticmethod
+    def _matching_isotope(element, q, spin):
+        """Isotope label whose (Q, I) match the given values, or None."""
+        for label, iso_spin, iso_q, _gamma in isotopes_for(element or ""):
+            if abs(q - iso_q) < 1e-6 and abs(spin - iso_spin) < 1e-6:
+                return label
+        return None
+
     def _spec_on_atom_change(self):
         label = self._spec_atom.value
         self._spec_updating = True
         try:
             element = self._atom_element(label)
-            gamma = default_gamma(element) if element else None
-            if gamma is not None:
-                self._spec_gamma.value = float(gamma)
             q, spin = self._qi_by_atom.get(label, (0.0, 0.0))
             self._spec_Q.value = q
             self._spec_I.value = spin
+            # isotope choices for this element; select the one matching (Q, I)
+            options = [e[0] for e in isotopes_for(element or "")] + ["custom"]
+            self._spec_isotope.options = options
+            match = self._matching_isotope(element, q, spin)
+            self._spec_isotope.value = match or "custom"
+            entry = isotope_entry(element, match) if (element and match) else None
+            gamma = (entry[3] if entry is not None and entry[3] is not None
+                     else (default_gamma(element) if element else None))
+            if gamma is not None:
+                self._spec_gamma.value = float(gamma)
             qp = self._current_qp(label) or {}
             nu_Q = abs(qp.get("nu_Q") or 0.0)  # MHz
             if self._spec_broad.value == 0.0:
@@ -413,12 +456,42 @@ class EFGResultsPanel(ResultsPanel[EFGResultsModel]):
             self._spec_updating = False
         self._recompute_spectrum()
 
-    def _on_qi_change(self):
-        """User edited Q or I: store per atom, refresh table/details/spectrum."""
+    def _spec_on_isotope_change(self):
+        """User picked an isotope: seed Q, I and gamma from the built-in table."""
         if self._spec_updating:
             return
         label = self._spec_atom.value
-        self._qi_by_atom[label] = (float(self._spec_Q.value), float(self._spec_I.value))
+        element = self._atom_element(label)
+        entry = isotope_entry(element, self._spec_isotope.value) if element else None
+        if entry is None:  # "custom": keep whatever is in the Q/I fields
+            return
+        _iso, spin, q, gamma = entry
+        self._spec_updating = True
+        try:
+            self._spec_Q.value = float(q)
+            self._spec_I.value = float(spin)
+            if gamma is not None:
+                self._spec_gamma.value = float(gamma)
+        finally:
+            self._spec_updating = False
+        self._on_qi_change()
+
+    def _on_qi_change(self):
+        """Q or I changed: store per atom, refresh table/details/spectrum."""
+        if self._spec_updating:
+            return
+        label = self._spec_atom.value
+        q, spin = float(self._spec_Q.value), float(self._spec_I.value)
+        self._qi_by_atom[label] = (q, spin)
+        # a manual edit that left the selected isotope's values flags "custom"
+        element = self._atom_element(label)
+        match = self._matching_isotope(element, q, spin)
+        if self._spec_isotope.value != (match or "custom"):
+            self._spec_updating = True
+            try:
+                self._spec_isotope.value = match or "custom"
+            finally:
+                self._spec_updating = False
         self._refresh_summary_table()
         if hasattr(self, "atom_selector") and self.atom_selector.value:
             self._update_tensor_display({"new": self.atom_selector.value})
