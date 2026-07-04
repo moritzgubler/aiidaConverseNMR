@@ -61,10 +61,14 @@ only a fallback for legacy runs without stored tensors. Data flow:
   `…_recomputed` (current Q/I).
 
 Spectrum section specifics:
-- Two modes (ToggleButtons): powder (grid/Lebedev averaging, optional
+- Two modes (ToggleButtons): powder (equal-area grid averaging, default
+  n=1000; the backend's Lebedev scheme is deliberately not exposed; optional
   per-transition decomposition à la thesis Fig 2.3) and single crystal
   (direction in lattice units → θ,φ; labeled sticks per transition,
-  `_half_int_str` renders m as "−1/2↔1/2").
+  `_half_int_str` renders m as "−1/2↔1/2"). Powder can additionally overlay
+  the single-crystal peak sticks for a chosen field direction
+  (`_spec_overlay` checkbox reveals the shared direction inputs; sticks drawn
+  by `_add_stick_traces`, shared with single-crystal mode).
 - **Axis and broadening are in kHz in the GUI only**; the physics backend is
   MHz — convert with `_MHZ_TO_KHZ` at the boundary, nowhere else.
 - ν_L = |γ|·B: γ (MHz/T) auto-seeded per element from

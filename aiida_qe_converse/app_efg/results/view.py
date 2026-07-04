@@ -318,21 +318,18 @@ class EFGResultsPanel(ResultsPanel[EFGResultsModel]):
         self._spec_second = ipw.Checkbox(value=True, indent=False,
                                          description="include 2nd-order term (eq 2.29)")
 
-        # powder-only controls: averaging scheme
-        self._spec_method = ipw.Dropdown(
-            options=[("Equal-area grid", "grid"), ("Lebedev quadrature", "lebedev")],
-            value="grid", description="Averaging:", style={"description_width": "120px"})
-        self._spec_npts = ipw.IntText(value=200, description="grid n (θ,φ):",
+        # powder-only controls: equal-area orientation grid
+        self._spec_npts = ipw.IntText(value=1000, description="grid n (θ,φ):",
                                       style={"description_width": "120px"},
                                       layout=ipw.Layout(width="220px"))
-        self._spec_leb = ipw.Dropdown(
-            options=[17, 29, 53, 89, 131], value=53, description="Lebedev order:",
-            style={"description_width": "120px"}, layout=ipw.Layout(width="220px"))
         self._spec_decompose = ipw.Checkbox(value=False, indent=False,
                                             description="decompose by transition")
+        self._spec_overlay = ipw.Checkbox(
+            value=False, indent=False,
+            description="mark single-crystal peaks for a field direction")
         self._spec_powder_box = ipw.VBox([
-            ipw.HBox([self._spec_method, self._spec_npts, self._spec_leb]),
-            self._spec_decompose,
+            self._spec_npts,
+            ipw.HBox([self._spec_decompose, self._spec_overlay]),
         ])
 
         # single-crystal-only controls: field direction in lattice units
@@ -361,11 +358,11 @@ class EFGResultsPanel(ResultsPanel[EFGResultsModel]):
         self._spec_atom.observe(lambda c: self._spec_on_atom_change(), names="value")
         self._spec_isotope.observe(lambda c: self._spec_on_isotope_change(), names="value")
         self._spec_mode.observe(lambda c: self._update_spectrum_visibility(), names="value")
-        self._spec_method.observe(lambda c: self._update_spectrum_visibility(), names="value")
+        self._spec_overlay.observe(lambda c: self._update_spectrum_visibility(), names="value")
         for w in (self._spec_Q, self._spec_I):
             w.observe(lambda c: self._on_qi_change(), names="value")
         for w in (self._spec_B, self._spec_gamma, self._spec_broad, self._spec_npts,
-                  self._spec_leb, self._spec_da, self._spec_db, self._spec_dc,
+                  self._spec_da, self._spec_db, self._spec_dc,
                   self._spec_second, self._spec_decompose):
             w.observe(lambda c: self._recompute_spectrum(), names="value")
         self._recompute_spectrum()
@@ -384,8 +381,10 @@ class EFGResultsPanel(ResultsPanel[EFGResultsModel]):
             ipw.HTML(
                 "<h4>Quadrupolar NMR spectrum</h4>"
                 "<p><b>Powder</b>: average over all field orientations "
-                "(eqs 2.28–2.33), independent of direction — pick an equal-area "
-                "grid or Lebedev quadrature.</p>"
+                "(eqs 2.28–2.33), independent of direction, on an equal-area "
+                "orientation grid. Optionally overlay the "
+                "single-crystal peak positions for a chosen field direction "
+                "on top of the powder lineshape.</p>"
                 "<p><b>Single crystal</b>: discrete transition lines for a fixed "
                 "field direction, projected onto the EFG principal axes to get "
                 "(θ, φ). The field strength sets ν<sub>L</sub> = |γ|·B.</p>"
@@ -415,10 +414,9 @@ class EFGResultsPanel(ResultsPanel[EFGResultsModel]):
     def _update_spectrum_visibility(self):
         powder = self._spec_mode.value == "powder"
         self._spec_powder_box.layout.display = "" if powder else "none"
-        self._spec_single_box.layout.display = "none" if powder else ""
-        lebedev = self._spec_method.value == "lebedev"
-        self._spec_npts.layout.display = "none" if lebedev else "inline-flex"
-        self._spec_leb.layout.display = "inline-flex" if lebedev else "none"
+        # the field-direction inputs also apply to the powder peak overlay
+        show_direction = (not powder) or self._spec_overlay.value
+        self._spec_single_box.layout.display = "" if show_direction else "none"
         self._recompute_spectrum()
 
     @staticmethod
@@ -497,6 +495,35 @@ class EFGResultsPanel(ResultsPanel[EFGResultsModel]):
             self._update_tensor_display({"new": self.atom_selector.value})
         self._recompute_spectrum()
 
+    def _field_direction_angles(self, axes):
+        """(theta, phi) of the field direction widgets in the EFG frame, or None."""
+        if not (self._model.structure and all(k in axes for k in ("Vxx", "Vyy", "Vzz"))):
+            return None
+        direction = [self._spec_da.value, self._spec_db.value, self._spec_dc.value]
+        return lattice_direction_to_angles(direction, self._model.structure.cell, axes)
+
+    @staticmethod
+    def _add_stick_traces(fig, lines, nu_L):
+        """Draw labelled transition sticks (height = relative weight) on ``fig``."""
+        import plotly.graph_objects as go
+
+        wmax = max((w for _, w, _ in lines), default=1.0) or 1.0
+        for freq, weight, m in lines:
+            x0 = (freq - nu_L) * _MHZ_TO_KHZ
+            height = weight / wmax
+            label = f"{_half_int_str(m - 1)}↔{_half_int_str(m)}"
+            fig.add_trace(go.Scatter(
+                x=[x0, x0], y=[0.0, height], mode="lines",
+                line=dict(color="#d62728", width=2), showlegend=False,
+                hoverinfo="text", hovertext=f"{label}  (Δν = {x0:.2f} kHz)"))
+            fig.add_trace(go.Scatter(
+                x=[x0], y=[height], mode="markers+text",
+                marker=dict(color="#d62728", size=4),
+                text=[label], textposition="top center",
+                textfont=dict(size=10, color="#d62728"),
+                showlegend=False, hoverinfo="skip"))
+        fig.update_yaxes(range=[0.0, 1.2])  # headroom for the labels
+
     def _recompute_spectrum(self):
         import plotly.graph_objects as go
 
@@ -536,10 +563,8 @@ class EFGResultsPanel(ResultsPanel[EFGResultsModel]):
 
         try:
             if self._spec_mode.value == "powder":
-                method = self._spec_method.value
                 n = max(int(self._spec_npts.value), 8)
-                kwargs = dict(n_theta=n, n_phi=n, broadening=broad, method=method,
-                              lebedev_order=int(self._spec_leb.value), second_order=second)
+                kwargs = dict(n_theta=n, n_phi=n, broadening=broad, second_order=second)
                 if self._spec_decompose.value:
                     # one curve per transition (thesis Fig. 2.3) + total
                     freqs, per, total = powder_spectrum_by_transition(
@@ -558,43 +583,42 @@ class EFGResultsPanel(ResultsPanel[EFGResultsModel]):
                     freqs, inten = powder_spectrum(nu_Q, eta, spin_I, nu_L, **kwargs)
                     fig.add_trace(go.Scatter(x=(freqs - nu_L) * _MHZ_TO_KHZ, y=inten,
                                              mode="lines", line=dict(color="#1f77b4")))
-                scheme = ("Lebedev order %d" % int(self._spec_leb.value)
-                          if method == "lebedev" else "%dx%d grid" % (n, n))
-                self._spec_info.value = base_info + f" &nbsp;|&nbsp; {scheme}"
+                info = base_info + " &nbsp;|&nbsp; %dx%d grid" % (n, n)
+                if self._spec_overlay.value:
+                    # overlay the single-crystal peak positions for the chosen
+                    # field direction on top of the powder lineshape
+                    try:
+                        angles = self._field_direction_angles(axes)
+                        if angles is None:
+                            info += (" &nbsp;|&nbsp; <span style='color:#d62728;'>"
+                                     "peak overlay needs the structure and EFG "
+                                     "eigenvectors (missing here)</span>")
+                        else:
+                            theta, phi = angles
+                            lines = single_crystal_lines(
+                                nu_Q, eta, spin_I, nu_L, theta, phi, second_order=second)
+                            self._add_stick_traces(fig, lines, nu_L)
+                            info += (f" &nbsp;|&nbsp; peaks at θ = {np.degrees(theta):.1f}°, "
+                                     f"φ = {np.degrees(phi):.1f}°")
+                    except ValueError as exc:
+                        info += f" &nbsp;|&nbsp; <span style='color:#d62728;'>{exc}</span>"
+                self._spec_info.value = info
             else:
-                theta = phi = None
-                if self._model.structure and all(k in axes for k in ("Vxx", "Vyy", "Vzz")):
-                    direction = [self._spec_da.value, self._spec_db.value, self._spec_dc.value]
-                    theta, phi = lattice_direction_to_angles(
-                        direction, self._model.structure.cell, axes)
-                if theta is None:
+                angles = self._field_direction_angles(axes)
+                if angles is None:
                     self._spec_plot.children = [ipw.HTML(
                         "<i>Single-crystal mode needs the structure and EFG "
                         "eigenvectors (missing here).</i>")]
                     self._spec_info.value = base_info
                     return
+                theta, phi = angles
                 lines = single_crystal_lines(nu_Q, eta, spin_I, nu_L, theta, phi,
                                              second_order=second)
                 if broad:
                     gx, gy = broaden_lines(lines, broad)
                     fig.add_trace(go.Scatter(x=(gx - nu_L) * _MHZ_TO_KHZ, y=gy, mode="lines",
                                              line=dict(color="#1f77b4")))
-                wmax = max((w for _, w, _ in lines), default=1.0) or 1.0
-                for freq, weight, m in lines:
-                    x0 = (freq - nu_L) * _MHZ_TO_KHZ
-                    height = weight / wmax
-                    label = f"{_half_int_str(m - 1)}↔{_half_int_str(m)}"
-                    fig.add_trace(go.Scatter(
-                        x=[x0, x0], y=[0.0, height], mode="lines",
-                        line=dict(color="#d62728", width=2), showlegend=False,
-                        hoverinfo="text", hovertext=f"{label}  (Δν = {x0:.2f} kHz)"))
-                    fig.add_trace(go.Scatter(
-                        x=[x0], y=[height], mode="markers+text",
-                        marker=dict(color="#d62728", size=4),
-                        text=[label], textposition="top center",
-                        textfont=dict(size=10, color="#d62728"),
-                        showlegend=False, hoverinfo="skip"))
-                fig.update_yaxes(range=[0.0, 1.2])  # headroom for the labels
+                self._add_stick_traces(fig, lines, nu_L)
                 self._spec_info.value = (base_info +
                     f" &nbsp;|&nbsp; θ = {np.degrees(theta):.1f}°, φ = {np.degrees(phi):.1f}°")
         except Exception as exc:
