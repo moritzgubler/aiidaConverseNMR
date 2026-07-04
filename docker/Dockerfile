@@ -31,6 +31,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Quieter/safer OpenMPI shared-memory transport inside containers.
 ENV OMPI_MCA_btl_vader_single_copy_mechanism=none
 
+# One OpenMP thread per MPI rank. fftw and openblas only get one core
+ENV OMP_NUM_THREADS=1
+
 ENV CODES=/opt/codes
 ARG QE_TAG=qe-7.5
 ARG QE_CONVERSE_REPO=https://github.com/mammasmias/QE-CONVERSE.git
