@@ -37,6 +37,8 @@ it — do not "clean up" without checking this list.
 - `rm /usr/local/bin/before-notebook.d/43_start-hq.sh`: disables HyperQueue.
 - `OMPI_MCA_btl_vader_single_copy_mechanism=none`: quiets OpenMPI shared-memory
   transport warnings in containers.
+- `OMP_NUM_THREADS=1`: one OpenMP thread per MPI rank — FFTW/OpenBLAS threading
+  on top of mpirun ranks would oversubscribe the cores.
 
 ## Startup hook (`90-register-qe-converse.sh`)
 
