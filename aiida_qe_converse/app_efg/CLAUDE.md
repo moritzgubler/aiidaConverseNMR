@@ -75,6 +75,13 @@ Spectrum section specifics:
   `data/nuclear.py::GYROMAGNETIC_RATIOS`, editable. B in Tesla.
 - Atoms with I < 1 get a hint instead of a plot (no quadrupole interaction);
   every atom with a stored tensor is selectable (isotope play allowed).
+- **Debug overrides** (`_dbg_toggle` + `_dbg_fields`): per-value checkbox +
+  FloatText for Vzz / η / ν_Q / ν_L, applied in `_recompute_spectrum` to the
+  **spectrum plot only** (summary table / tensor details keep DFT values).
+  Unchecked fields track the live DFT-derived values (`_seed_debug_fields`,
+  guarded by `_spec_updating`); a Vzz override recomputes Cq/ν_Q from it, a
+  direct ν_Q override wins over that, ν_L override replaces |γ|·B. Overridden
+  values are flagged red "(override)" in the info line.
 - Plot embedding: build `go.Figure`, then `self._spec_plot.children =
   [go.FigureWidget(fig)]`. `display()` into an Output renders nothing here.
 

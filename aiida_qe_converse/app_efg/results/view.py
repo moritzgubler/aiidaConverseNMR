@@ -11,7 +11,10 @@ from ...data.nuclear import (
     isotopes_for,
     larmor_frequency,
 )
-from ...postprocessing.efg_analysis import quadrupolar_parameters_from_tensor
+from ...postprocessing.efg_analysis import (
+    CQ_MHZ_PER_Q_VZZ,
+    quadrupolar_parameters_from_tensor,
+)
 from ...postprocessing.quadrupolar_spectrum import (
     powder_spectrum,
     powder_spectrum_by_transition,
@@ -347,6 +350,31 @@ class EFGResultsPanel(ResultsPanel[EFGResultsModel]):
             ipw.HBox([self._spec_da, self._spec_db, self._spec_dc]),
         ])
 
+        # debug: hand-override the DFT-derived numbers fed to the spectrum plot
+        self._dbg_toggle = ipw.ToggleButton(
+            value=False, description="Debug: override DFT values", icon="bug",
+            tooltip="Feed hand-picked Vzz / η / ν_Q / ν_L into the spectrum plot",
+            layout=ipw.Layout(width="260px"))
+        self._dbg_fields = {}
+        dbg_rows = []
+        for key, name in [("Vzz", "Vzz (Ha/bohr²)"), ("eta", "η"),
+                          ("nu_Q", "ν_Q (MHz)"), ("nu_L", "ν_L (MHz)")]:
+            enable = ipw.Checkbox(value=False, indent=False, description=name,
+                                  layout=ipw.Layout(width="220px"))
+            value = ipw.FloatText(value=0.0, disabled=True,
+                                  layout=ipw.Layout(width="160px"))
+            self._dbg_fields[key] = (enable, value)
+            dbg_rows.append(ipw.HBox([enable, value]))
+        self._dbg_box = ipw.VBox([ipw.HTML(
+            "<p style='font-size:0.9em;color:#666;'>Overrides affect the "
+            "<b>spectrum plot only</b> — the summary table and tensor details "
+            "keep the DFT values. Unchecked fields track the live DFT-derived "
+            "values; tick one to freeze and edit it. Overriding V<sub>zz</sub> "
+            "recomputes C<sub>q</sub> and ν<sub>Q</sub> from it (a ν<sub>Q</sub> "
+            "override wins); the ν<sub>L</sub> override replaces |γ|·B.</p>"
+        )] + dbg_rows)
+        self._dbg_box.layout.display = "none"
+
         self._spec_info = ipw.HTML()
         # Container holding a plotly FigureWidget (display(fig) does not render here).
         self._spec_plot = ipw.VBox()
@@ -365,6 +393,10 @@ class EFGResultsPanel(ResultsPanel[EFGResultsModel]):
                   self._spec_da, self._spec_db, self._spec_dc,
                   self._spec_second, self._spec_decompose):
             w.observe(lambda c: self._recompute_spectrum(), names="value")
+        self._dbg_toggle.observe(lambda c: self._on_debug_toggle(), names="value")
+        for key, (enable, value) in self._dbg_fields.items():
+            enable.observe(lambda c, k=key: self._on_debug_enable(k), names="value")
+            value.observe(lambda c: self._recompute_spectrum(), names="value")
         self._recompute_spectrum()
 
         controls = ipw.VBox([
@@ -375,6 +407,8 @@ class EFGResultsPanel(ResultsPanel[EFGResultsModel]):
             self._spec_powder_box,
             self._spec_single_box,
             ipw.HBox([self._spec_broad, self._spec_second]),
+            self._dbg_toggle,
+            self._dbg_box,
             self._spec_info,
         ])
         return ipw.VBox([
@@ -524,6 +558,33 @@ class EFGResultsPanel(ResultsPanel[EFGResultsModel]):
                 showlegend=False, hoverinfo="skip"))
         fig.update_yaxes(range=[0.0, 1.2])  # headroom for the labels
 
+    def _on_debug_toggle(self):
+        self._dbg_box.layout.display = "" if self._dbg_toggle.value else "none"
+        self._recompute_spectrum()
+
+    def _on_debug_enable(self, key):
+        enable, value = self._dbg_fields[key]
+        value.disabled = not enable.value
+        self._recompute_spectrum()
+
+    def _debug_overrides(self):
+        """Active debug overrides as ``{key: value}``; empty when debug is off."""
+        if not self._dbg_toggle.value:
+            return {}
+        return {key: float(value.value)
+                for key, (enable, value) in self._dbg_fields.items()
+                if enable.value}
+
+    def _seed_debug_fields(self, **dft_values):
+        """Keep the inactive (unchecked) debug fields tracking the DFT values."""
+        self._spec_updating = True
+        try:
+            for key, (enable, value) in self._dbg_fields.items():
+                if not enable.value and key in dft_values:
+                    value.value = float(dft_values[key])
+        finally:
+            self._spec_updating = False
+
     def _recompute_spectrum(self):
         import plotly.graph_objects as go
 
@@ -535,6 +596,7 @@ class EFGResultsPanel(ResultsPanel[EFGResultsModel]):
             self._spec_plot.children = [ipw.HTML("<i>No EFG tensor stored for this atom.</i>")]
             self._spec_info.value = ""
             return
+        vzz = float(qp["Vzz"])
         eta = float(qp["eta"])
         cq = qp.get("Cq")
         nu_Q = float(qp.get("nu_Q") or 0.0)
@@ -545,11 +607,42 @@ class EFGResultsPanel(ResultsPanel[EFGResultsModel]):
         broad = (broad_khz / _MHZ_TO_KHZ) if broad_khz else None  # backend works in MHz
         second = bool(self._spec_second.value)
 
-        base_info = (f"ν<sub>L</sub> = |γ|·B = {nu_L:.3f} MHz &nbsp;|&nbsp; "
-                     f"V<sub>zz</sub> = {qp['Vzz']:.4f} Ha/bohr² &nbsp;|&nbsp; "
-                     f"η = {eta:.4f} &nbsp;|&nbsp; "
-                     + (f"C<sub>q</sub> = {cq:.4f} MHz &nbsp;|&nbsp; " if cq is not None else "")
-                     + f"ν<sub>Q</sub> = {nu_Q:.4f} MHz &nbsp;|&nbsp; I = {spin_I:g}")
+        # debug overrides: inactive fields track the DFT values, active ones win
+        self._seed_debug_fields(Vzz=vzz, eta=eta, nu_Q=nu_Q, nu_L=nu_L)
+        overrides = self._debug_overrides()
+        cq_overridden = nuq_overridden = False
+        if "Vzz" in overrides:
+            vzz = overrides["Vzz"]
+            q_moment = float(self._spec_Q.value)
+            if abs(q_moment) > 1e-12:
+                cq = CQ_MHZ_PER_Q_VZZ * q_moment * vzz
+                cq_overridden = True
+                denom = 2.0 * spin_I * (2.0 * spin_I - 1.0)
+                if denom > 1e-12:
+                    nu_Q = 3.0 * cq / denom
+                    nuq_overridden = True
+        eta = overrides.get("eta", eta)
+        if "nu_Q" in overrides:
+            nu_Q = overrides["nu_Q"]
+            nuq_overridden = True
+        nu_L = overrides.get("nu_L", nu_L)
+
+        def _mark(text, overridden):
+            return (f"<span style='color:#d62728;'>{text} (override)</span>"
+                    if overridden else text)
+
+        parts = [
+            _mark(f"ν<sub>L</sub> = {nu_L:.3f} MHz" if "nu_L" in overrides
+                  else f"ν<sub>L</sub> = |γ|·B = {nu_L:.3f} MHz",
+                  "nu_L" in overrides),
+            _mark(f"V<sub>zz</sub> = {vzz:.4f} Ha/bohr²", "Vzz" in overrides),
+            _mark(f"η = {eta:.4f}", "eta" in overrides),
+        ]
+        if cq is not None:
+            parts.append(_mark(f"C<sub>q</sub> = {cq:.4f} MHz", cq_overridden))
+        parts.append(_mark(f"ν<sub>Q</sub> = {nu_Q:.4f} MHz", nuq_overridden))
+        parts.append(f"I = {spin_I:g}")
+        base_info = " &nbsp;|&nbsp; ".join(parts)
 
         if spin_I < 1.0:
             self._spec_plot.children = [ipw.HTML(
