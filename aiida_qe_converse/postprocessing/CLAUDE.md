@@ -46,6 +46,15 @@ onto the EFG eigenvector frame → (θ, φ). Note: "a,b,c" means the rows of the
 stored `structure.cell` — meaningful only if that cell matches the user's
 crystallographic convention (no re-reduction upstream).
 
+## spectrum_export.py — CSV serializer for the GUI's plotted-data download
+
+`spectrum_csv(meta, blocks)`: `#`-commented metadata header + data blocks,
+each starting with a plain (uncommented) column-names row so spreadsheets
+align names over data (two blank lines between blocks, gnuplot `index`
+style). Pure string building, no units logic — the GUI passes values
+already converted for display (kHz axis etc.). Tested in
+`tests/test_spectrum_csv.py`.
+
 ## efg_analysis.py — recompute anything from the stored tensor
 
 The EFG tensor is Q/I-independent; Q and I only enter Cq/ν_Q. So:

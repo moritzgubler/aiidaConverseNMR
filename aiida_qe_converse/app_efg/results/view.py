@@ -22,6 +22,7 @@ from ...postprocessing.quadrupolar_spectrum import (
     broaden_lines,
     lattice_direction_to_angles,
 )
+from ...postprocessing.spectrum_export import spectrum_csv
 
 # qualitative palette for the per-transition powder curves
 _TRANSITION_COLORS = ["#17becf", "#9467bd", "#2ca02c", "#ff7f0e",
@@ -36,6 +37,11 @@ def _half_int_str(x):
     n = int(round(2 * x))
     s = str(n // 2) if n % 2 == 0 else f"{n}/2"
     return s.replace("-", "−")
+
+
+def _transition_ascii(m):
+    """ASCII transition label for CSV export, e.g. '-1/2<->1/2'."""
+    return f"{_half_int_str(m - 1)}<->{_half_int_str(m)}".replace("−", "-")
 
 
 class EFGResultsPanel(ResultsPanel[EFGResultsModel]):
@@ -379,6 +385,15 @@ class EFGResultsPanel(ResultsPanel[EFGResultsModel]):
         # Container holding a plotly FigureWidget (display(fig) does not render here).
         self._spec_plot = ipw.VBox()
 
+        # WYSIWYG export of the plotted curves; payload cached by _recompute_spectrum
+        self._spec_export = None
+        self._spec_download = ipw.Button(
+            description="Download plotted data (CSV)", icon="download",
+            tooltip="Download the curves currently shown in the plot as CSV "
+                    "(with a #-commented parameter header)",
+            layout=ipw.Layout(width="260px"), disabled=True)
+        self._spec_download.on_click(self._download_spectrum_csv)
+
         self._spec_updating = False
         self._spec_on_atom_change()         # seed gamma/Q/I/broadening
         self._update_spectrum_visibility()  # show the right controls for the mode
@@ -443,6 +458,7 @@ class EFGResultsPanel(ResultsPanel[EFGResultsModel]):
                 "target='_blank'>doi:10.1351/pac200173111795</a>.</p>"),
             controls,
             self._spec_plot,
+            self._spec_download,
         ])
 
     def _update_spectrum_visibility(self):
@@ -558,6 +574,33 @@ class EFGResultsPanel(ResultsPanel[EFGResultsModel]):
                 showlegend=False, hoverinfo="skip"))
         fig.update_yaxes(range=[0.0, 1.2])  # headroom for the labels
 
+    @staticmethod
+    def _stick_block(title, lines, nu_L):
+        """Export block mirroring ``_add_stick_traces`` (intensity_norm = plotted height)."""
+        wmax = max((w for _, w, _ in lines), default=1.0) or 1.0
+        return (title,
+                ["nu_minus_nuL_kHz", "nu_MHz", "weight", "intensity_norm", "transition"],
+                [[(f - nu_L) * _MHZ_TO_KHZ for f, _, _ in lines],
+                 [f for f, _, _ in lines],
+                 [w for _, w, _ in lines],
+                 [w / wmax for _, w, _ in lines],
+                 [_transition_ascii(m) for _, _, m in lines]])
+
+    def _set_spec_export(self, payload):
+        """Cache the CSV payload for the download button; None disables it."""
+        self._spec_export = payload
+        if hasattr(self, "_spec_download"):
+            self._spec_download.disabled = payload is None
+
+    def _direction_meta(self, theta, phi):
+        """Field-direction metadata lines for the CSV header."""
+        return [
+            ("field_direction_abc",
+             f"{self._spec_da.value:g} {self._spec_db.value:g} {self._spec_dc.value:g}"),
+            ("theta_deg", float(np.degrees(theta))),
+            ("phi_deg", float(np.degrees(phi))),
+        ]
+
     def _on_debug_toggle(self):
         self._dbg_box.layout.display = "" if self._dbg_toggle.value else "none"
         self._recompute_spectrum()
@@ -587,6 +630,7 @@ class EFGResultsPanel(ResultsPanel[EFGResultsModel]):
 
     def _recompute_spectrum(self):
         import plotly.graph_objects as go
+        from datetime import datetime
 
         if self._spec_updating:
             return
@@ -595,6 +639,7 @@ class EFGResultsPanel(ResultsPanel[EFGResultsModel]):
         if qp is None:
             self._spec_plot.children = [ipw.HTML("<i>No EFG tensor stored for this atom.</i>")]
             self._spec_info.value = ""
+            self._set_spec_export(None)
             return
         vzz = float(qp["Vzz"])
         eta = float(qp["eta"])
@@ -649,10 +694,13 @@ class EFGResultsPanel(ResultsPanel[EFGResultsModel]):
                 "<i>A quadrupolar spectrum needs I ≥ 1 — adjust I above "
                 "(spin-1/2 isotopes have no quadrupole interaction).</i>")]
             self._spec_info.value = base_info
+            self._set_spec_export(None)
             return
 
         fig = go.Figure()
         show_legend = False
+        export_blocks = []  # (title, column_names, columns) — mirrors the traces
+        export_extra = []   # mode-specific metadata lines
 
         try:
             if self._spec_mode.value == "powder":
@@ -665,17 +713,28 @@ class EFGResultsPanel(ResultsPanel[EFGResultsModel]):
                     fig.add_trace(go.Scatter(x=(freqs - nu_L) * _MHZ_TO_KHZ, y=total,
                                              mode="lines", name="total",
                                              line=dict(color="#000000", width=2)))
+                    names = ["nu_minus_nuL_kHz", "nu_MHz", "intensity_total"]
+                    cols = [(freqs - nu_L) * _MHZ_TO_KHZ, freqs, total]
                     for i, (m, inten) in enumerate(per):
                         lbl = f"{_half_int_str(m - 1)}↔{_half_int_str(m)}"
                         fig.add_trace(go.Scatter(
                             x=(freqs - nu_L) * _MHZ_TO_KHZ, y=inten, mode="lines", name=lbl,
                             line=dict(color=_TRANSITION_COLORS[i % len(_TRANSITION_COLORS)],
                                       dash="dash")))
+                        names.append(f"intensity_{_transition_ascii(m)}")
+                        cols.append(inten)
+                    export_blocks.append(
+                        ("powder lineshape, decomposed by transition", names, cols))
                     show_legend = True
                 else:
                     freqs, inten = powder_spectrum(nu_Q, eta, spin_I, nu_L, **kwargs)
                     fig.add_trace(go.Scatter(x=(freqs - nu_L) * _MHZ_TO_KHZ, y=inten,
                                              mode="lines", line=dict(color="#1f77b4")))
+                    export_blocks.append(
+                        ("powder lineshape",
+                         ["nu_minus_nuL_kHz", "nu_MHz", "intensity_total"],
+                         [(freqs - nu_L) * _MHZ_TO_KHZ, freqs, inten]))
+                export_extra.append(("orientation_grid", f"{n} x {n}"))
                 info = base_info + " &nbsp;|&nbsp; %dx%d grid" % (n, n)
                 if self._spec_overlay.value:
                     # overlay the single-crystal peak positions for the chosen
@@ -691,6 +750,9 @@ class EFGResultsPanel(ResultsPanel[EFGResultsModel]):
                             lines = single_crystal_lines(
                                 nu_Q, eta, spin_I, nu_L, theta, phi, second_order=second)
                             self._add_stick_traces(fig, lines, nu_L)
+                            export_blocks.append(self._stick_block(
+                                "single-crystal peak positions", lines, nu_L))
+                            export_extra += self._direction_meta(theta, phi)
                             info += (f" &nbsp;|&nbsp; peaks at θ = {np.degrees(theta):.1f}°, "
                                      f"φ = {np.degrees(phi):.1f}°")
                     except ValueError as exc:
@@ -703,6 +765,7 @@ class EFGResultsPanel(ResultsPanel[EFGResultsModel]):
                         "<i>Single-crystal mode needs the structure and EFG "
                         "eigenvectors (missing here).</i>")]
                     self._spec_info.value = base_info
+                    self._set_spec_export(None)
                     return
                 theta, phi = angles
                 lines = single_crystal_lines(nu_Q, eta, spin_I, nu_L, theta, phi,
@@ -711,11 +774,19 @@ class EFGResultsPanel(ResultsPanel[EFGResultsModel]):
                     gx, gy = broaden_lines(lines, broad)
                     fig.add_trace(go.Scatter(x=(gx - nu_L) * _MHZ_TO_KHZ, y=gy, mode="lines",
                                              line=dict(color="#1f77b4")))
+                    export_blocks.append(
+                        ("broadened envelope",
+                         ["nu_minus_nuL_kHz", "nu_MHz", "intensity"],
+                         [(gx - nu_L) * _MHZ_TO_KHZ, gx, gy]))
                 self._add_stick_traces(fig, lines, nu_L)
+                export_blocks.append(self._stick_block(
+                    "single-crystal peak positions", lines, nu_L))
+                export_extra += self._direction_meta(theta, phi)
                 self._spec_info.value = (base_info +
                     f" &nbsp;|&nbsp; θ = {np.degrees(theta):.1f}°, φ = {np.degrees(phi):.1f}°")
         except Exception as exc:
             self._spec_plot.children = [ipw.HTML(f"<i>Could not compute spectrum: {exc}</i>")]
+            self._set_spec_export(None)
             return
 
         fig.update_layout(
@@ -723,6 +794,32 @@ class EFGResultsPanel(ResultsPanel[EFGResultsModel]):
             height=420, margin=dict(l=50, r=20, t=20, b=50),
             template="plotly_white", showlegend=show_legend)
         self._spec_plot.children = [go.FigureWidget(fig)]
+
+        # cache the plotted data for the CSV download (WYSIWYG, incl. overrides)
+        def _mv(value, overridden=False):
+            return "%.8g%s" % (value, " (override)" if overridden else "")
+
+        meta = [
+            ("generated", datetime.now().isoformat(timespec="seconds")),
+            ("atom", label),
+            ("isotope", self._spec_isotope.value),
+            ("mode", self._spec_mode.value),
+            ("B_T", float(self._spec_B.value)),
+            ("gamma_MHz_per_T", abs(float(self._spec_gamma.value))),
+            ("nu_L_MHz", _mv(nu_L, "nu_L" in overrides)),
+            ("Q_1e-30_m2", float(self._spec_Q.value)),
+            ("I", spin_I),
+            ("Vzz_Ha_bohr2", _mv(vzz, "Vzz" in overrides)),
+            ("eta", _mv(eta, "eta" in overrides)),
+        ]
+        if cq is not None:
+            meta.append(("Cq_MHz", _mv(cq, cq_overridden)))
+        meta += [
+            ("nu_Q_MHz", _mv(nu_Q, nuq_overridden)),
+            ("broadening_FWHM_kHz", broad_khz),
+            ("second_order", second),
+        ] + export_extra
+        self._set_spec_export({"meta": meta, "blocks": export_blocks})
 
     def _render_structure_view(self):
         import re
@@ -762,11 +859,28 @@ class EFGResultsPanel(ResultsPanel[EFGResultsModel]):
         }
         json_str = json.dumps(results_data, indent=2)
         filename = f"efg_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+        self._js_download_text(filename, json_str, "application/json")
 
+    def _download_spectrum_csv(self, _=None):
+        """Download the currently plotted spectrum (cached by _recompute_spectrum)."""
+        from datetime import datetime
+
+        if not self._spec_export:
+            return
+        csv_text = spectrum_csv(self._spec_export["meta"], self._spec_export["blocks"])
+        filename = "efg_spectrum_{}_{}_{}.csv".format(
+            self._spec_atom.value, self._spec_mode.value,
+            datetime.now().strftime("%Y%m%d_%H%M%S"))
+        self._js_download_text(filename, csv_text, "text/csv")
+
+    @staticmethod
+    def _js_download_text(filename, text, mime):
+        """Trigger a browser download of ``text`` via a JavaScript Blob."""
+        import json
         from IPython.display import display, Javascript
+
         js_download = f"""
-        var data = {json_str};
-        var blob = new Blob([JSON.stringify(data, null, 2)], {{type: 'application/json'}});
+        var blob = new Blob([{json.dumps(text)}], {{type: '{mime}'}});
         var url = URL.createObjectURL(blob);
         var a = document.createElement('a');
         a.href = url;

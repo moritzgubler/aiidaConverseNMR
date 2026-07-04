@@ -59,6 +59,17 @@ only a fallback for legacy runs without stored tensors. Data flow:
   it around any programmatic `.value =` writes.
 - JSON download contains both `quadrupolar_parameters_as_computed` (parser) and
   `…_recomputed` (current Q/I).
+- Spectrum CSV download ("Download plotted data") is **WYSIWYG**:
+  `_recompute_spectrum` caches exactly the plotted arrays + a `#`-commented
+  parameter header as `self._spec_export` (`_set_spec_export`; every no-plot
+  path stores None, which disables the button). Serializer is
+  `postprocessing/spectrum_export.py::spectrum_csv` (pure, unit-tested;
+  column names are a plain CSV row above the data so spreadsheets align
+  them; blocks separated by two blank lines = gnuplot `index` convention;
+  `pd.read_csv(f, comment='#')` reads a block with names). Debug
+  overrides are marked `(override)` in the header; transition labels are
+  ASCII (`-1/2<->1/2`, via `_transition_ascii`). Both download buttons share
+  `_js_download_text` (JS Blob; payload escaped with `json.dumps`).
 
 Spectrum section specifics:
 - Two modes (ToggleButtons): powder (equal-area grid averaging, default
