@@ -17,9 +17,13 @@ API pitfalls (traits vs properties, FigureWidget, protocol aliases).
   `set_model_state` must include every trait the builder needs — the framework
   serializes only that.
 - View = GIPAW pseudo section (info note that the Advanced-step pseudo family
-  is IGNORED, per-element preview, MISSING warning) + editable per-element Q/I
-  table seeded from `data/nuclear.py` defaults. The shared atom-selection
-  table is deliberately not rendered.
+  is IGNORED, per-element preview, MISSING warning) + per-element nuclear-data
+  table: an isotope dropdown (options from `data/nuclear.py::ISOTOPES`, plus
+  "custom") seeding editable Q/I fields; manual Q/I edits flip the dropdown to
+  "custom" (`_nuc_syncing` guards the observer loop). The chosen isotope label
+  is stored in `nuclear_data[element]["isotope"]` (ignored by
+  `build_efg_arrays`, kept for provenance/GUI restore). The shared
+  atom-selection table is deliberately not rendered.
 
 ## workchain.py
 
@@ -44,12 +48,15 @@ only a fallback for legacy runs without stored tensors. Data flow:
 - `_current_qp(label)`: tensor + `_qi_by_atom` → Vxx/Vyy/Vzz, η, Cq, ν_Q,
   eigenvectors (Cartesian) and `eigenvectors_lattice` (v·cell⁻¹, scaled so the
   largest |component| is 1 — directly usable in the direction inputs).
-- Editing the spectrum section's Q/I widgets (`_on_qi_change`) updates
-  `_qi_by_atom`, then refreshes: summary table (`_refresh_summary_table`, a
-  persistent `ipw.HTML` whose `.value` is rewritten), the tensor-details block,
-  and the spectrum. The `_spec_updating` flag guards against observer feedback
-  loops while `_spec_on_atom_change` seeds widget values — keep it around any
-  programmatic `.value =` writes.
+- The spectrum section has an isotope dropdown (per-element options from
+  `data/nuclear.py::ISOTOPES` + "custom"): picking one seeds Q, I and γ;
+  editing Q/I by hand flips it back to "custom" / the matching isotope.
+  Editing the Q/I widgets (`_on_qi_change`) updates `_qi_by_atom`, then
+  refreshes: summary table (`_refresh_summary_table`, a persistent `ipw.HTML`
+  whose `.value` is rewritten), the tensor-details block, and the spectrum.
+  The `_spec_updating` flag guards against observer feedback loops while
+  `_spec_on_atom_change`/`_spec_on_isotope_change` seed widget values — keep
+  it around any programmatic `.value =` writes.
 - JSON download contains both `quadrupolar_parameters_as_computed` (parser) and
   `…_recomputed` (current Q/I).
 
