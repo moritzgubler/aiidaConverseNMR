@@ -2,8 +2,15 @@
 Powder quadrupolar NMR spectrum simulator.
 
 Implements the first- and second-order quadrupolar perturbation of the Zeeman
-levels for a polycrystalline (powder) sample, following the thesis equations
-2.28-2.33:
+levels for a polycrystalline (powder) sample.  All equation and figure numbers
+here and in the EFG GUI refer to:
+
+    T. Arh, *Stability of quantum spin liquids in two dimensions*,
+    doctoral dissertation, Faculty of Mathematics and Physics,
+    University of Ljubljana (2024),
+    https://repozitorij.uni-lj.si/IzpisGradiva.php?id=159093&lang=eng
+
+Equations 2.28-2.33:
 
 * 2.28  first-order shift   nu1_{m-1,m} = (1/4) nu_Q (1-2m) [3cos^2 th - 1 + eta sin^2 th cos 2ph]
 * 2.29  second-order shift  nu2_{m-1,m} = -(nu_Q^2/nu_L) { -A[m(m-1) - I(I+1)/6 + 3/8]

@@ -4,7 +4,13 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from aiida_qe_converse.data.nuclear import build_efg_arrays, default_q_i
+from aiida_qe_converse.data.nuclear import (
+    DEFAULT_NUCLEAR_DATA,
+    build_efg_arrays,
+    default_q_i,
+    isotope_entry,
+    isotopes_for,
+)
 
 
 def test_default_lookup_known_and_unknown():
@@ -14,6 +20,18 @@ def test_default_lookup_known_and_unknown():
     assert q == 0.0 and i == 0.5
     # Unknown element -> skipped
     assert default_q_i('Xx') == (0.0, 0.0)
+
+
+def test_isotope_table():
+    # first entry per element is the default and feeds DEFAULT_NUCLEAR_DATA
+    label, spin, quad, _gamma = isotopes_for('Cl')[0]
+    assert (label, spin, quad) == DEFAULT_NUCLEAR_DATA['Cl']
+    # sibling isotope lookup (Pyykkö 2017: 37Cl Q = -63.93 mb)
+    entry = isotope_entry('Cl', '37Cl')
+    assert entry[1] == 1.5 and abs(entry[2] - (-6.393)) < 1e-9
+    # unknown element / isotope
+    assert isotopes_for('Xx') == []
+    assert isotope_entry('Cl', '99Cl') is None
 
 
 def test_alphabetical_species_ordering():

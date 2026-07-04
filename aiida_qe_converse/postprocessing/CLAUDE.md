@@ -11,7 +11,11 @@ profile (`tests/test_quadrupolar_spectrum.py`, `tests/test_efg_analysis.py`).
 - The GUI plots the axis in **kHz** and takes broadening in kHz: conversion
   happens only in `app_efg/results/view.py` (`_MHZ_TO_KHZ`). Never convert here.
 
-## quadrupolar_spectrum.py — thesis eqs 2.28–2.33 (Simonova thesis, pp. 26–28)
+## quadrupolar_spectrum.py — thesis eqs 2.28–2.33
+
+"Thesis" everywhere (eqs 2.28–2.33, Fig 2.3) = T. Arh, *Stability of quantum
+spin liquids in two dimensions*, doctoral dissertation, Univ. of Ljubljana
+(2024), <https://repozitorij.uni-lj.si/IzpisGradiva.php?id=159093&lang=eng>.
 
 Equation → function map:
 - eq 2.28 (first-order shift ν⁽¹⁾, ∝ ν_Q(1−2m)[3cos²θ−1+η sin²θ cos2φ]) and
