@@ -10,9 +10,10 @@ from ...data.nuclear import (
     isotope_entry,
     isotopes_for,
     larmor_frequency,
+    matching_isotope,
 )
 from ...postprocessing.efg_analysis import (
-    CQ_MHZ_PER_Q_VZZ,
+    cq_nuq_from_vzz,
     quadrupolar_parameters_from_tensor,
 )
 from ...postprocessing.quadrupolar_spectrum import (
@@ -23,25 +24,16 @@ from ...postprocessing.quadrupolar_spectrum import (
     lattice_direction_to_angles,
 )
 from ...postprocessing.spectrum_export import spectrum_csv
-
-# qualitative palette for the per-transition powder curves
-_TRANSITION_COLORS = ["#17becf", "#9467bd", "#2ca02c", "#ff7f0e",
-                      "#e377c2", "#8c564b", "#bcbd22", "#1f77b4", "#d62728"]
-
-# the spectrum frequency axis (nu - nu_L) is plotted in kHz
-_MHZ_TO_KHZ = 1000.0
-
-
-def _half_int_str(x):
-    """Format a multiple of 1/2 as a tidy string: 0.5->'1/2', -1.5->'−3/2', 1->'1'."""
-    n = int(round(2 * x))
-    s = str(n // 2) if n % 2 == 0 else f"{n}/2"
-    return s.replace("-", "−")
-
-
-def _transition_ascii(m):
-    """ASCII transition label for CSV export, e.g. '-1/2<->1/2'."""
-    return f"{_half_int_str(m - 1)}<->{_half_int_str(m)}".replace("−", "-")
+from ...app_common.spectrum_plot import (
+    MHZ_TO_KHZ as _MHZ_TO_KHZ,
+    add_envelope_trace,
+    add_powder_traces,
+    add_stick_traces,
+    direction_meta,
+    js_download_text,
+    spectrum_layout,
+    stick_block,
+)
 
 
 class EFGResultsPanel(ResultsPanel[EFGResultsModel]):
@@ -469,13 +461,8 @@ class EFGResultsPanel(ResultsPanel[EFGResultsModel]):
         self._spec_single_box.layout.display = "" if show_direction else "none"
         self._recompute_spectrum()
 
-    @staticmethod
-    def _matching_isotope(element, q, spin):
-        """Isotope label whose (Q, I) match the given values, or None."""
-        for label, iso_spin, iso_q, _gamma in isotopes_for(element or ""):
-            if abs(q - iso_q) < 1e-6 and abs(spin - iso_spin) < 1e-6:
-                return label
-        return None
+    # shared with the standalone simulator app (data/nuclear.py)
+    _matching_isotope = staticmethod(matching_isotope)
 
     def _spec_on_atom_change(self):
         label = self._spec_atom.value
@@ -552,39 +539,9 @@ class EFGResultsPanel(ResultsPanel[EFGResultsModel]):
         direction = [self._spec_da.value, self._spec_db.value, self._spec_dc.value]
         return lattice_direction_to_angles(direction, self._model.structure.cell, axes)
 
-    @staticmethod
-    def _add_stick_traces(fig, lines, nu_L):
-        """Draw labelled transition sticks (height = relative weight) on ``fig``."""
-        import plotly.graph_objects as go
-
-        wmax = max((w for _, w, _ in lines), default=1.0) or 1.0
-        for freq, weight, m in lines:
-            x0 = (freq - nu_L) * _MHZ_TO_KHZ
-            height = weight / wmax
-            label = f"{_half_int_str(m - 1)}↔{_half_int_str(m)}"
-            fig.add_trace(go.Scatter(
-                x=[x0, x0], y=[0.0, height], mode="lines",
-                line=dict(color="#d62728", width=2), showlegend=False,
-                hoverinfo="text", hovertext=f"{label}  (Δν = {x0:.2f} kHz)"))
-            fig.add_trace(go.Scatter(
-                x=[x0], y=[height], mode="markers+text",
-                marker=dict(color="#d62728", size=4),
-                text=[label], textposition="top center",
-                textfont=dict(size=10, color="#d62728"),
-                showlegend=False, hoverinfo="skip"))
-        fig.update_yaxes(range=[0.0, 1.2])  # headroom for the labels
-
-    @staticmethod
-    def _stick_block(title, lines, nu_L):
-        """Export block mirroring ``_add_stick_traces`` (intensity_norm = plotted height)."""
-        wmax = max((w for _, w, _ in lines), default=1.0) or 1.0
-        return (title,
-                ["nu_minus_nuL_kHz", "nu_MHz", "weight", "intensity_norm", "transition"],
-                [[(f - nu_L) * _MHZ_TO_KHZ for f, _, _ in lines],
-                 [f for f, _, _ in lines],
-                 [w for _, w, _ in lines],
-                 [w / wmax for _, w, _ in lines],
-                 [_transition_ascii(m) for _, _, m in lines]])
+    # shared with the standalone simulator app (app_common/spectrum_plot.py)
+    _add_stick_traces = staticmethod(add_stick_traces)
+    _stick_block = staticmethod(stick_block)
 
     def _set_spec_export(self, payload):
         """Cache the CSV payload for the download button; None disables it."""
@@ -594,12 +551,9 @@ class EFGResultsPanel(ResultsPanel[EFGResultsModel]):
 
     def _direction_meta(self, theta, phi):
         """Field-direction metadata lines for the CSV header."""
-        return [
-            ("field_direction_abc",
-             f"{self._spec_da.value:g} {self._spec_db.value:g} {self._spec_dc.value:g}"),
-            ("theta_deg", float(np.degrees(theta))),
-            ("phi_deg", float(np.degrees(phi))),
-        ]
+        return direction_meta(
+            (self._spec_da.value, self._spec_db.value, self._spec_dc.value),
+            theta, phi)
 
     def _on_debug_toggle(self):
         self._dbg_box.layout.display = "" if self._dbg_toggle.value else "none"
@@ -658,14 +612,13 @@ class EFGResultsPanel(ResultsPanel[EFGResultsModel]):
         cq_overridden = nuq_overridden = False
         if "Vzz" in overrides:
             vzz = overrides["Vzz"]
-            q_moment = float(self._spec_Q.value)
-            if abs(q_moment) > 1e-12:
-                cq = CQ_MHZ_PER_Q_VZZ * q_moment * vzz
+            new_cq, new_nuq = cq_nuq_from_vzz(vzz, self._spec_Q.value, spin_I)
+            if new_cq is not None:
+                cq = new_cq
                 cq_overridden = True
-                denom = 2.0 * spin_I * (2.0 * spin_I - 1.0)
-                if denom > 1e-12:
-                    nu_Q = 3.0 * cq / denom
-                    nuq_overridden = True
+            if new_nuq is not None:
+                nu_Q = new_nuq
+                nuq_overridden = True
         eta = overrides.get("eta", eta)
         if "nu_Q" in overrides:
             nu_Q = overrides["nu_Q"]
@@ -710,30 +663,11 @@ class EFGResultsPanel(ResultsPanel[EFGResultsModel]):
                     # one curve per transition (thesis Fig. 2.3) + total
                     freqs, per, total = powder_spectrum_by_transition(
                         nu_Q, eta, spin_I, nu_L, **kwargs)
-                    fig.add_trace(go.Scatter(x=(freqs - nu_L) * _MHZ_TO_KHZ, y=total,
-                                             mode="lines", name="total",
-                                             line=dict(color="#000000", width=2)))
-                    names = ["nu_minus_nuL_kHz", "nu_MHz", "intensity_total"]
-                    cols = [(freqs - nu_L) * _MHZ_TO_KHZ, freqs, total]
-                    for i, (m, inten) in enumerate(per):
-                        lbl = f"{_half_int_str(m - 1)}↔{_half_int_str(m)}"
-                        fig.add_trace(go.Scatter(
-                            x=(freqs - nu_L) * _MHZ_TO_KHZ, y=inten, mode="lines", name=lbl,
-                            line=dict(color=_TRANSITION_COLORS[i % len(_TRANSITION_COLORS)],
-                                      dash="dash")))
-                        names.append(f"intensity_{_transition_ascii(m)}")
-                        cols.append(inten)
-                    export_blocks.append(
-                        ("powder lineshape, decomposed by transition", names, cols))
-                    show_legend = True
                 else:
-                    freqs, inten = powder_spectrum(nu_Q, eta, spin_I, nu_L, **kwargs)
-                    fig.add_trace(go.Scatter(x=(freqs - nu_L) * _MHZ_TO_KHZ, y=inten,
-                                             mode="lines", line=dict(color="#1f77b4")))
-                    export_blocks.append(
-                        ("powder lineshape",
-                         ["nu_minus_nuL_kHz", "nu_MHz", "intensity_total"],
-                         [(freqs - nu_L) * _MHZ_TO_KHZ, freqs, inten]))
+                    freqs, total = powder_spectrum(nu_Q, eta, spin_I, nu_L, **kwargs)
+                    per = None
+                block, show_legend = add_powder_traces(fig, freqs, total, per, nu_L)
+                export_blocks.append(block)
                 export_extra.append(("orientation_grid", f"{n} x {n}"))
                 info = base_info + " &nbsp;|&nbsp; %dx%d grid" % (n, n)
                 if self._spec_overlay.value:
@@ -772,12 +706,7 @@ class EFGResultsPanel(ResultsPanel[EFGResultsModel]):
                                              second_order=second)
                 if broad:
                     gx, gy = broaden_lines(lines, broad)
-                    fig.add_trace(go.Scatter(x=(gx - nu_L) * _MHZ_TO_KHZ, y=gy, mode="lines",
-                                             line=dict(color="#1f77b4")))
-                    export_blocks.append(
-                        ("broadened envelope",
-                         ["nu_minus_nuL_kHz", "nu_MHz", "intensity"],
-                         [(gx - nu_L) * _MHZ_TO_KHZ, gx, gy]))
+                    export_blocks.append(add_envelope_trace(fig, gx, gy, nu_L))
                 self._add_stick_traces(fig, lines, nu_L)
                 export_blocks.append(self._stick_block(
                     "single-crystal peak positions", lines, nu_L))
@@ -789,10 +718,7 @@ class EFGResultsPanel(ResultsPanel[EFGResultsModel]):
             self._set_spec_export(None)
             return
 
-        fig.update_layout(
-            xaxis_title="ν − ν_L (kHz)", yaxis_title="intensity (norm.)",
-            height=420, margin=dict(l=50, r=20, t=20, b=50),
-            template="plotly_white", showlegend=show_legend)
+        spectrum_layout(fig, show_legend)
         self._spec_plot.children = [go.FigureWidget(fig)]
 
         # cache the plotted data for the CSV download (WYSIWYG, incl. overrides)
@@ -873,21 +799,4 @@ class EFGResultsPanel(ResultsPanel[EFGResultsModel]):
             datetime.now().strftime("%Y%m%d_%H%M%S"))
         self._js_download_text(filename, csv_text, "text/csv")
 
-    @staticmethod
-    def _js_download_text(filename, text, mime):
-        """Trigger a browser download of ``text`` via a JavaScript Blob."""
-        import json
-        from IPython.display import display, Javascript
-
-        js_download = f"""
-        var blob = new Blob([{json.dumps(text)}], {{type: '{mime}'}});
-        var url = URL.createObjectURL(blob);
-        var a = document.createElement('a');
-        a.href = url;
-        a.download = '{filename}';
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-        """
-        display(Javascript(js_download))
+    _js_download_text = staticmethod(js_download_text)

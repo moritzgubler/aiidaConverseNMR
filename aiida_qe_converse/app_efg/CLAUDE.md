@@ -4,7 +4,11 @@ Registered as `aiidalab_qe.properties: qeefg` via `__init__.py::property`
 (outline / configuration / resources / result / workchain dict). The NMR plugin
 (`../app/`) mirrors this layout and shares the same pitfalls; the common
 atom-selection model+panel base is `../app_common/atom_selection.py`
-(both config panels subclass it). Root CLAUDE.md lists the general aiidalab-qe
+(both config panels subclass it), and the spectrum plotting/export/download
+helpers live in `../app_common/spectrum_plot.py`, **shared with the standalone
+simulator app** (`../app_simulator/`) — view.py binds them as `_`-prefixed
+staticmethod aliases, so changing sticks/curves/CSV columns means editing the
+shared module, not view.py. Root CLAUDE.md lists the general aiidalab-qe
 API pitfalls (traits vs properties, FigureWidget, protocol aliases).
 
 ## configuration/
@@ -81,7 +85,8 @@ Spectrum section specifics:
   (`_spec_overlay` checkbox reveals the shared direction inputs; sticks drawn
   by `_add_stick_traces`, shared with single-crystal mode).
 - **Axis and broadening are in kHz in the GUI only**; the physics backend is
-  MHz — convert with `_MHZ_TO_KHZ` at the boundary, nowhere else.
+  MHz — convert with `_MHZ_TO_KHZ` (= `spectrum_plot.MHZ_TO_KHZ`) at the GUI
+  boundary only (here and in the simulator widget), never in postprocessing.
 - ν_L = |γ|·B: γ (MHz/T) auto-seeded per element from
   `data/nuclear.py::GYROMAGNETIC_RATIOS`, editable. B in Tesla.
 - Atoms with I < 1 get a hint instead of a plot (no quadrupole interaction);

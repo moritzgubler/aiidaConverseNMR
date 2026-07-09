@@ -7,7 +7,10 @@ import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from aiida_qe_converse.parsers.efg_parsing import parse_efg_output
-from tests.sample_efg_output import build_sample_output
+# plain module import (pytest puts this file's directory on sys.path): the
+# top-level name `tests` is too generic — conda envs can contain a stray
+# site-packages `tests` package that would shadow a `tests.…` import
+from sample_efg_output import build_sample_output
 
 
 # A symmetric, traceless EFG tensor for an O site, with principal values that

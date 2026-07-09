@@ -23,8 +23,14 @@ aiida_qe_converse/
   data/nuclear.py                              # isotope Q/I table, gyromagnetic ratios, species->q_efg mapping
   postprocessing/ quadrupolar_spectrum.py      # powder + single-crystal spectra (thesis eqs 2.28-2.33)
                   efg_analysis.py              # recompute Vzz/eta/Cq/nu_Q/axes from stored tensor for any Q,I
-  app/ app_efg/ app_common/                    # aiidalab-qe GUI plugins (NMR, EFG, shared atom-selection base)
+  app/ app_efg/ app_common/                    # aiidalab-qe GUI plugins (NMR, EFG, shared atom-selection base
+                                               #   + spectrum_plot.py: plot helpers shared with app_simulator)
+  app_simulator/  core.py + widget.py          # standalone AiiDAlab app: quadrupolar spectra from user-entered
+                                               #   Vzz/eta/isotope — NO aiida/aiidalab_qe imports allowed here
   provision.py                                 # `aiida-qe-converse-setup` CLI: register codes + import pseudos
+metadata.json, setup.cfg, start.md,            # repo doubles as a standalone AiiDAlab app (symlinked into ~/apps
+post_install, quadrupolar_simulator.ipynb,     #   by the docker startup hook). NOTE: the aiidalab package reads the
+misc/logo.svg                                  #   tile metadata from setup.cfg [aiidalab], NOT metadata.json — sync both
 docker/                                        # canonical deployment image (see docker/CLAUDE.md + README.md)
 examples/codes/merlin/                         # `verdi code create --config` YAMLs for PSI Merlin7 (CLI format!)
 pseudos/gipaw_PBE*, gipaw_PBEsol/              # GIPAW UPFs shipped in-repo, imported into AiiDA groups

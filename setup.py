@@ -16,6 +16,11 @@ setup(
         'aiida-core>=2.0.0',
         'aiida-quantumespresso>=4.0.0',
         'numpy',
+        'scipy',
+        # GUI (aiidalab-qe plugins and the standalone simulator app)
+        'ipywidgets',
+        'plotly',
+        'anywidget',  # plotly's FigureWidget backend (plotly >= 6)
     ],
     entry_points={
         'aiida.calculations': [
