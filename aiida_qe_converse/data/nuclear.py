@@ -164,6 +164,15 @@ def isotope_entry(element, label):
     return None
 
 
+def matching_isotope(element, quadrupole_moment, spin):
+    """Isotope label whose (Q, I) match the given values, or None."""
+    for label, iso_spin, iso_q, _gamma in isotopes_for(element or ''):
+        if (abs(quadrupole_moment - iso_q) < 1e-6
+                and abs(spin - iso_spin) < 1e-6):
+            return label
+    return None
+
+
 def default_q_i(element):
     """Return ``(Q, I)`` for ``element`` from the built-in table.
 

@@ -18,6 +18,11 @@ setup(
         'aiida-pseudo',
         'numpy',
         'ase',
+        'scipy',
+        # GUI (aiidalab-qe plugins and the standalone simulator app)
+        'ipywidgets',
+        'plotly',
+        'anywidget',  # plotly's FigureWidget backend (plotly >= 6)
     ],
     entry_points={
         'console_scripts': [

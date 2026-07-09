@@ -1,0 +1,6 @@
+#!/bin/bash
+# AiiDAlab runs this after cloning/updating the app: install the package
+# (and its dependencies) so the simulator notebook and the AiiDA entry
+# points (calculations, workchains, aiidalab-qe plugins) are available.
+set -e
+pip install --user -e .

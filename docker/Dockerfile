@@ -84,6 +84,20 @@ RUN rm -f /usr/local/bin/before-notebook.d/43_start-hq.sh
 RUN mkdir -p /usr/local/bin/before-notebook.d \
     && cat > /usr/local/bin/before-notebook.d/90-register-qe-converse.sh <<'SH'
 #!/bin/bash
+# Expose the standalone quadrupolar-simulator app on the AiiDAlab home page
+# (must run at startup, not build time: /home/jovyan is a volume). Guards:
+# - a pre-existing REAL directory (e.g. a git clone from the app manager) is
+#   left alone -- ln -sfn would silently nest the symlink inside it;
+# - nothing here may fail unguarded: this hook is sourced under start.sh's
+#   `set -e`, so an error would abort container startup entirely.
+app_link=/home/jovyan/apps/quadrupolar-simulator
+if [ ! -e "$app_link" ] || [ -L "$app_link" ]; then
+    { mkdir -p /home/jovyan/apps \
+        && ln -sfn /opt/aiida-qe-converse "$app_link"; } \
+        || echo "[qe-converse] app symlink failed; home tile unavailable"
+else
+    echo "[qe-converse] $app_link exists (real directory); leaving it alone"
+fi
 echo "[qe-converse] provisioning codes + GIPAW pseudos ..."
 aiida-qe-converse-setup pseudos || echo "[qe-converse] pseudo import deferred to next start"
 aiida-qe-converse-setup codes --computer localhost --with-mpi \

@@ -38,6 +38,23 @@ def principal_values(tensor):
     return eigvals[order], eigvecs[:, order]
 
 
+def cq_nuq_from_vzz(vzz, quadrupole_moment=0.0, spin=0.0):
+    """Cq and nu_Q (MHz) from a principal value Vzz (Ha/bohr^2), Q and I.
+
+    The single home of this arithmetic (matches QE-CONVERSE ``src/efg.f90``);
+    every GUI path derives Cq/nu_Q through here. Returns ``(Cq, nu_Q)`` with
+    ``Cq = None`` when Q == 0 and ``nu_Q = None`` unless also I >= 1.
+    """
+    quadrupole_moment = float(quadrupole_moment)
+    spin = float(spin)
+    if abs(quadrupole_moment) <= 1e-12:
+        return None, None
+    cq = float(CQ_MHZ_PER_Q_VZZ * quadrupole_moment * float(vzz))
+    denom = 2.0 * spin * (2.0 * spin - 1.0)
+    nu_q = float(3.0 * cq / denom) if denom > 1e-12 else None
+    return cq, nu_q
+
+
 def quadrupolar_parameters_from_tensor(tensor, quadrupole_moment=0.0, spin=0.0):
     """Derive all quadrupolar NMR parameters from an EFG tensor.
 
@@ -56,7 +73,8 @@ def quadrupolar_parameters_from_tensor(tensor, quadrupole_moment=0.0, spin=0.0):
     vxx, vyy, vzz = (float(x) for x in v)
     eta = (vxx - vyy) / vzz if abs(vzz) > 1e-12 else 0.0
 
-    result = {
+    cq, nu_q = cq_nuq_from_vzz(vzz, quadrupole_moment, spin)
+    return {
         'Vxx': vxx,
         'Vyy': vyy,
         'Vzz': vzz,
@@ -66,17 +84,6 @@ def quadrupolar_parameters_from_tensor(tensor, quadrupole_moment=0.0, spin=0.0):
             'Vyy': axes[:, 1].tolist(),
             'Vzz': axes[:, 2].tolist(),
         },
-        'Cq': None,
-        'nu_Q': None,
+        'Cq': cq,
+        'nu_Q': nu_q,
     }
-
-    quadrupole_moment = float(quadrupole_moment)
-    spin = float(spin)
-    if abs(quadrupole_moment) > 1e-12:
-        cq = CQ_MHZ_PER_Q_VZZ * quadrupole_moment * vzz
-        result['Cq'] = float(cq)
-        denom = 2.0 * spin * (2.0 * spin - 1.0)
-        if denom > 1e-12:
-            result['nu_Q'] = float(3.0 * cq / denom)
-
-    return result

@@ -8,8 +8,10 @@ profile (`tests/test_quadrupolar_spectrum.py`, `tests/test_efg_analysis.py`).
 
 - **Everything in this package is in MHz** (frequencies, broadening FWHM) and
   Ha/bohr² (EFG tensor / principal values). Q is in 1e-30 m² (= 10 mbarn).
-- The GUI plots the axis in **kHz** and takes broadening in kHz: conversion
-  happens only in `app_efg/results/view.py` (`_MHZ_TO_KHZ`). Never convert here.
+- The GUIs plot the axis in **kHz** and take broadening in kHz: conversion
+  happens only at the GUI boundary via `app_common/spectrum_plot.py::MHZ_TO_KHZ`
+  (used by `app_efg/results/view.py` and `app_simulator/widget.py`). Never
+  convert here.
 
 ## quadrupolar_spectrum.py — thesis eqs 2.28–2.33
 
@@ -61,11 +63,14 @@ The EFG tensor is Q/I-independent; Q and I only enter Cq/ν_Q. So:
 - `principal_values(tensor)`: symmetrize (guards parse round-off), `eigh`,
   order by |eigenvalue| ascending → `[Vxx, Vyy, Vzz]` with |Vzz|≥|Vyy|≥|Vxx|
   (NMR convention); eigenvectors as columns.
-- `quadrupolar_parameters_from_tensor(tensor, Q, I)`: η = (Vxx−Vyy)/Vzz;
+- `cq_nuq_from_vzz(vzz, Q, I)`: the **single home** of the Cq/ν_Q arithmetic —
   Cq = `CQ_MHZ_PER_Q_VZZ` × Q × Vzz (≈ 2.3496 MHz per Q·Vzz — the **same
   constants and expression as QE-CONVERSE `src/efg.f90`**, so recomputed values
   match the Fortran printout); ν_Q = 3Cq/(2I(2I−1)). Cq is None when Q=0;
-  ν_Q None unless also I ≥ 1 (spin-½ ⇒ no quadrupole interaction).
+  ν_Q None unless also I ≥ 1 (spin-½ ⇒ no quadrupole interaction). All GUI
+  paths (EFG panel incl. debug overrides, simulator) derive through it.
+- `quadrupolar_parameters_from_tensor(tensor, Q, I)`: η = (Vxx−Vyy)/Vzz plus
+  the above per-tensor (principal values, eigenvector dict, Cq, ν_Q).
 
 This is what lets the GUI switch isotopes / edit Q,I at plot time without
 re-running DFT. Nuclear constants (Q, I, γ per isotope) live in

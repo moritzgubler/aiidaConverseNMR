@@ -42,8 +42,11 @@ it — do not "clean up" without checking this list.
 
 ## Startup hook (`90-register-qe-converse.sh`)
 
-Runs on every container start, idempotent; calls the plugin CLI
-(`aiida-qe-converse-setup pseudos` / `codes --with-mpi …`) and then fixes the
+Runs on every container start, idempotent. First symlinks
+`/opt/aiida-qe-converse` into `/home/jovyan/apps/quadrupolar-simulator` so the
+standalone simulator app appears on the AiiDAlab home page (cannot be done at
+build time — `/home/jovyan` is a volume). Then calls the plugin CLI
+(`aiida-qe-converse-setup pseudos` / `codes --with-mpi …`) and fixes the
 `localhost` computer — all three fixes are properties of the aiidalab base
 image, not of the plugin:
 
