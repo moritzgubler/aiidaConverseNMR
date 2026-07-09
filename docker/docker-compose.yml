@@ -5,6 +5,10 @@ services:
       # (the root .dockerignore applies); the Dockerfile itself lives in docker/.
       context: ..
       dockerfile: docker/Dockerfile
+      # Host network during build: the default build network has no working
+      # DNS on hosts using the systemd-resolved stub resolver (127.0.0.53),
+      # which pip needs for the upf-tools layer.
+      network: host
     image: aiida-qe-converse:local
     ports:
       - "8888:8888"

@@ -1,14 +1,15 @@
 """Pure computation layer of the standalone quadrupolar NMR simulator app.
 
-Bridges user-entered values (Vzz, eta, Q, I, gamma, B, lattice/eigenvector
+Bridges user-entered values (Cq, eta, I, gamma, B, lattice/eigenvector
 matrices) to the physics backend in ``postprocessing/quadrupolar_spectrum.py``.
+Everything is an experimental quantity -- no EFG tensor, no Q, no atomic
+units (deriving Cq from a computed Vzz is the EFG results panel's job).
 No widgets, no AiiDA -- unit-testable headless. All frequencies in MHz
 (the GUI converts to kHz only at the display boundary).
 """
 
 import numpy as np
 
-from ..postprocessing.efg_analysis import cq_nuq_from_vzz
 from ..postprocessing.quadrupolar_spectrum import (
     broaden_lines,
     lattice_direction_to_angles,
@@ -17,15 +18,26 @@ from ..postprocessing.quadrupolar_spectrum import (
 )
 
 
-def derived_parameters(vzz, q_moment, spin_I, gamma, field_T):
-    """Cq, nu_Q and nu_L (MHz) from user-entered values.
+def nu_q_from_cq(cq, spin_I):
+    """nu_Q = 3 Cq / (2I(2I-1)) in MHz; None for I < 1 (no quadrupole term)."""
+    denom = 2.0 * float(spin_I) * (2.0 * float(spin_I) - 1.0)
+    return float(3.0 * float(cq) / denom) if denom > 1e-12 else None
 
-    Cq/nu_Q via ``efg_analysis.cq_nuq_from_vzz`` (Cq None when Q == 0,
-    nu_Q None unless also I >= 1); nu_L = |gamma . B| -- the field magnitude
-    sets the Larmor frequency, so the sign of either entry is irrelevant.
+
+def cq_from_nu_q(nu_q, spin_I):
+    """Inverse of :func:`nu_q_from_cq`; None for I < 1 (conversion singular)."""
+    denom = 2.0 * float(spin_I) * (2.0 * float(spin_I) - 1.0)
+    return float(float(nu_q) * denom / 3.0) if denom > 1e-12 else None
+
+
+def derived_parameters(cq, spin_I, gamma, field_T):
+    """nu_Q and nu_L (MHz) from user-entered values.
+
+    nu_Q via :func:`nu_q_from_cq` (None unless I >= 1); nu_L = |gamma . B| --
+    the field magnitude sets the Larmor frequency, so the sign of either
+    entry is irrelevant.
     """
-    cq, nu_q = cq_nuq_from_vzz(vzz, q_moment, spin_I)
-    return {'Cq': cq, 'nu_Q': nu_q,
+    return {'nu_Q': nu_q_from_cq(cq, spin_I),
             'nu_L': abs(float(gamma) * float(field_T))}
 
 
@@ -90,7 +102,7 @@ def simulate(nu_Q, eta, spin_I, nu_L, mode='powder', n_grid=1000,
         raise ValueError('A quadrupolar spectrum needs I >= 1 '
                          '(spin-1/2 isotopes have no quadrupole interaction)')
     if abs(float(nu_Q)) < 1e-12:
-        raise ValueError('nu_Q is zero -- Vzz and Q must both be nonzero')
+        raise ValueError('nu_Q is zero -- set a nonzero C_q')
     broadening = float(broadening) if broadening else None
 
     result = {'freqs': None, 'per_transition': None, 'total': None,

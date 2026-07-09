@@ -1,6 +1,6 @@
 {
     "title": "Quadrupolar NMR Simulator",
-    "description": "Interactive first/second-order quadrupolar NMR/NQR spectrum simulator (powder and single crystal) from user-entered Vzz, eta, isotope and magnetic field. Part of aiida-qe-converse, which also provides aiidalab-qe plugins for computing NMR shielding and EFG tensors with QE-CONVERSE.",
+    "description": "Interactive first/second-order quadrupolar NMR/NQR spectrum simulator (powder and single crystal) from user-entered Cq (or nu_Q), eta, isotope and magnetic field. Part of aiida-qe-converse, which also provides aiidalab-qe plugins for computing NMR shielding and EFG tensors with QE-CONVERSE.",
     "authors": "aiida-qe-converse developers",
     "logo": "../quadrupolar-simulator/misc/logo.svg",
     "categories": ["quantum", "utilities"],

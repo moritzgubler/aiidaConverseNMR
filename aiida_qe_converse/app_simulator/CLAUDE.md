@@ -1,10 +1,22 @@
 # app_simulator/ — standalone AiiDAlab app (quadrupolar spectrum simulator)
 
-A plain AiiDAlab app (NOT an aiidalab-qe plugin): every input is user-entered
-(isotope/Q/I/γ, B, Vzz, η; lattice vectors + EFG eigenvectors + field
-direction for single-crystal work). Launched via the repo-root app files
+A plain AiiDAlab app (NOT an aiidalab-qe plugin): every input is an
+**experimental** user-entered quantity (isotope seeding I/γ, B, the coupling
+as a linked Cq ↔ ν_Q pair, η; lattice vectors + EFG eigenvectors + field
+direction for single-crystal work). Deliberately NO Vzz and NO Q here —
+those exist only to derive Cq from a DFT tensor, which is the EFG panel's
+job. Launched via the repo-root app files
 (`setup.cfg [aiidalab]` + `start.md` → `quadrupolar_simulator.ipynb`;
 `post_install` pip-installs the package — the notebook assumes it succeeded).
+
+## The Cq ↔ ν_Q linkage
+
+ν_Q = 3Cq/(2I(2I−1)) involves only I (no Q!). Both are editable fields kept
+in sync under the `_updating` guard; **Cq is the stored source of truth**:
+when I changes (isotope switch or manual edit), Cq stays as typed and ν_Q is
+re-derived. For I < 1 the conversion is singular (and there is no quadrupolar
+spectrum): the ν_Q field is disabled, keeps its last value, and Cq is never
+touched.
 
 ## Hard constraint
 
@@ -18,14 +30,14 @@ first plot, not at package import.
 
 ## Layout
 
-- `core.py` — pure functions, no widgets: `derived_parameters` (Cq/ν_Q via
-  `efg_analysis.cq_nuq_from_vzz` — the single home of that arithmetic;
-  ν_L = |γ·B|), `validate_eigenvectors` /`orthonormalize`
+- `core.py` — pure functions, no widgets: `nu_q_from_cq`/`cq_from_nu_q`
+  (the linked-pair conversions), `derived_parameters` (ν_Q + ν_L = |γ·B|),
+  `validate_eigenvectors` /`orthonormalize`
   (rows = Vxx/Vyy/Vzz axes; SVD nearest-orthonormal), `axes_dict`, and
   `simulate` — the single dispatch into
   `postprocessing/quadrupolar_spectrum.py` (powder / single / overlay).
   Raises `ValueError` with user-displayable messages (I < 1, ν_Q = 0,
-  zero direction).
+  zero direction). No dependency on `efg_analysis` (no tensor here).
 - `widget.py` — `QuadrupolarSimulatorWidget(ipw.VBox)`. Renders through the
   SAME shared helpers as the EFG panel (`app_common/spectrum_plot.py`:
   `add_powder_traces`, `add_envelope_trace`, `add_stick_traces`,
