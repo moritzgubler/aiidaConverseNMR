@@ -23,6 +23,12 @@ it — do not "clean up" without checking this list.
   `mpif90`). qe-converse configure hard-requires QE **7.5 source tree**
   (`--with-qe-source`, checks `make.inc` + version) — conda QE packages cannot
   be used. qe-converse is pinned to a commit via `ARG QE_CONVERSE_REF`.
+- `chgrp -R users + chmod -R g+w /opt/aiida-qe-converse`: **appmode writes its
+  tmp notebook copy (`<name>-0.ipynb`) into the app dir** when the home-page
+  tile is opened; a root-owned COPY 403s ("Permission denied: ...-0.ipynb").
+  Mirrors the base image's group-writable `/opt/aiidalab-home`. The dev bind
+  mount masks this (host uid == jovyan uid) — test app-opening with the plain
+  compose file, not the dev override.
 - `PIP_USER=0 pip install -e /opt/aiida-qe-converse`: the base image defaults to
   user installs under `/home/jovyan/.local`, which is (a) shadowed at runtime by
   the home volume and (b) root-owned at build time, which **breaks the base
