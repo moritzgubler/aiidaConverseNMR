@@ -70,7 +70,11 @@ COPY . /opt/aiida-qe-converse
 # otherwise opening the app tile 403s with "Permission denied: ...-0.ipynb".
 # Same pattern as the base image's /opt/aiidalab-home (drwsrwsr-x root:users).
 RUN chgrp -R users /opt/aiida-qe-converse && chmod -R g+w /opt/aiida-qe-converse
-RUN PIP_USER=0 pip install --no-cache-dir -e /opt/aiida-qe-converse
+# --no-build-isolation: use the image's setuptools instead of downloading one
+# from PyPI (build isolation otherwise makes this layer need working DNS,
+# which docker's default build network lacks on hosts using the
+# systemd-resolved stub resolver). All install_requires are in the base image.
+RUN PIP_USER=0 pip install --no-cache-dir --no-build-isolation -e /opt/aiida-qe-converse
 
 # Drop two bundled QE plugins broken on this dev stack (aiida-core 2.8 API drift:
 # aiida_pythonjob 'get_stack_size', old 'ResultPanel' import) -- they only spam

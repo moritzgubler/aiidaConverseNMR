@@ -37,16 +37,38 @@ def test_isotope_seeding(widget):
     widget._element.value = "Al"
     assert widget._isotope.value == "27Al"
     assert widget._I.value == pytest.approx(2.5)
-    assert widget._Q.value == pytest.approx(14.66)
     assert widget._gamma.value == pytest.approx(11.1031)
+    # C_q kept as typed; nu_Q follows the new I: 3*3.0 / (2*2.5*4) = 0.45
+    assert widget._cq.value == pytest.approx(3.0)
+    assert widget._nuq.value == pytest.approx(0.45)
 
 
-def test_manual_qi_edit_flips_to_custom(widget):
-    widget._Q.value = 3.21
+def test_manual_ig_edit_flips_to_custom(widget):
+    widget._I.value = 2.5  # Na has no I = 5/2 isotope
     assert widget._isotope.value == "custom"
-    # restoring the tabulated (Q, I) flips back to the matching isotope
-    widget._Q.value = 10.4
+    # restoring the tabulated (I, gamma) flips back to the matching isotope
+    widget._I.value = 1.5
     assert widget._isotope.value == "23Na"
+
+
+def test_cq_nuq_linkage(widget):
+    # default 23Na (I = 3/2): nu_Q = C_q / 2
+    assert widget._nuq.value == pytest.approx(widget._cq.value / 2.0)
+    widget._cq.value = 2.0
+    assert widget._nuq.value == pytest.approx(1.0)
+    widget._nuq.value = 3.0
+    assert widget._cq.value == pytest.approx(6.0)
+    # I change keeps C_q, re-derives nu_Q: 3*6 / (2*2.5*4) = 0.9
+    widget._I.value = 2.5
+    assert widget._cq.value == pytest.approx(6.0)
+    assert widget._nuq.value == pytest.approx(0.9)
+    # spin-1/2: conversion singular, nu_Q disabled, C_q untouched
+    widget._element.value = "C"
+    assert widget._nuq.disabled
+    assert widget._cq.value == pytest.approx(6.0)
+    widget._element.value = "Na"
+    assert not widget._nuq.disabled
+    assert widget._nuq.value == pytest.approx(3.0)  # 6.0 / 2 for I = 3/2
 
 
 def test_spin_half_shows_hint(widget):
@@ -117,8 +139,8 @@ def test_csv_export_payload(widget):
     from aiida_qe_converse.postprocessing.spectrum_export import spectrum_csv
 
     meta_keys = [k for k, _v in widget._export["meta"]]
-    for key in ("isotope", "B_T", "nu_L_MHz", "Vzz_Ha_bohr2", "eta",
-                "Cq_MHz", "nu_Q_MHz", "second_order"):
+    for key in ("isotope", "B_T", "gamma_MHz_per_T", "nu_L_MHz", "I",
+                "Cq_MHz", "nu_Q_MHz", "eta", "second_order"):
         assert key in meta_keys
     text = spectrum_csv(widget._export["meta"], widget._export["blocks"])
     assert "nu_minus_nuL_kHz" in text

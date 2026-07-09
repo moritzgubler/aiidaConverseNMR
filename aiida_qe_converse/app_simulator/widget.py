@@ -22,12 +22,7 @@ from ..app_common.spectrum_plot import (
     spectrum_layout,
     stick_block,
 )
-from ..data.nuclear import (
-    ISOTOPES,
-    isotope_entry,
-    isotopes_for,
-    matching_isotope,
-)
+from ..data.nuclear import ISOTOPES, isotope_entry, isotopes_for
 from ..postprocessing.spectrum_export import spectrum_csv
 from . import core
 
@@ -41,19 +36,17 @@ overlay the single-crystal peak positions for a chosen field direction.</p>
 <p><b>Single crystal</b>: discrete transition lines for a fixed field
 direction (in lattice-vector units), projected onto the EFG principal axes
 to get (θ, φ). The field strength sets ν<sub>L</sub> = |γ|·B.</p>
-<p><b>Pick an isotope</b> to seed Q, I and γ from the built-in table, or
-edit them freely (= <i>custom</i>). C<sub>q</sub> = e·Q·V<sub>zz</sub>/h and
-ν<sub>Q</sub> = 3C<sub>q</sub>/(2I(2I−1)) update live.</p>
+<p><b>Pick an isotope</b> to seed I and γ from the built-in table, or edit
+them freely (= <i>custom</i>). Enter the quadrupolar coupling as
+<b>C<sub>q</sub> or ν<sub>Q</sub></b> — the two fields stay in sync via
+ν<sub>Q</sub> = 3C<sub>q</sub>/(2I(2I−1)); when I changes, C<sub>q</sub>
+is kept and ν<sub>Q</sub> follows.</p>
 <p style='font-size:0.9em;color:#666;'>Equation numbers refer to
 <a href='https://repozitorij.uni-lj.si/IzpisGradiva.php?id=159093&amp;lang=eng'
 target='_blank'>T. Arh, <i>Stability of quantum spin liquids in two
 dimensions</i>, doctoral dissertation, University of Ljubljana (2024)</a>.<br>
-Isotope data: Q from P. Pyykk&ouml;, <i>Year-2017 nuclear quadrupole
-moments</i>, Mol. Phys. 116, 1328 (2018),
-<a href='https://doi.org/10.1080/00268976.2018.1426131'
-target='_blank'>doi:10.1080/00268976.2018.1426131</a>; spins I and γ from
-R. K. Harris et al., <i>NMR nomenclature</i> (IUPAC Recommendations 2001),
-Pure Appl. Chem. 73, 1795 (2001),
+Isotope data (spins I and γ): R. K. Harris et al., <i>NMR nomenclature</i>
+(IUPAC Recommendations 2001), Pure Appl. Chem. 73, 1795 (2001),
 <a href='https://doi.org/10.1351/pac200173111795'
 target='_blank'>doi:10.1351/pac200173111795</a>.</p>
 """
@@ -101,8 +94,9 @@ class QuadrupolarSimulatorWidget(ipw.VBox):
             self._mode,
             ipw.HBox([self._element, self._isotope]),
             ipw.HBox([self._B, self._gamma]),
-            ipw.HBox([self._Q, self._I]),
-            ipw.HBox([self._vzz, self._eta]),
+            ipw.HBox([self._I]),
+            ipw.HBox([self._cq, self._nuq]),
+            ipw.HBox([self._eta]),
             self._powder_box,
             self._crystal_box,
             ipw.HBox([self._broad, self._second]),
@@ -126,13 +120,15 @@ class QuadrupolarSimulatorWidget(ipw.VBox):
                                      layout=ipw.Layout(width="240px"))
         self._B = ipw.FloatText(value=9.4, description="B field (T):", style=style)
         self._gamma = ipw.FloatText(value=0.0, description="|γ| (MHz/T):", style=style)
-        self._Q = ipw.FloatText(value=0.0, description="Q (10⁻³⁰ m²):", style=style)
         self._I = ipw.FloatText(value=0.0, description="I:", style=style)
 
     def _build_efg_section(self):
         style = {"description_width": "120px"}
-        self._vzz = ipw.FloatText(value=0.1, step=0.01,
-                                  description="Vzz (Ha/bohr²):", style=style)
+        # linked pair: C_q is the stored quantity, nu_Q a live view through I
+        self._cq = ipw.FloatText(value=3.0, step=0.1,
+                                 description="C_q (MHz):", style=style)
+        self._nuq = ipw.FloatText(value=0.0, step=0.1,
+                                  description="ν_Q (MHz):", style=style)
         self._eta = ipw.BoundedFloatText(value=0.0, min=0.0, max=1.0, step=0.05,
                                          description="η (0…1):", style=style)
 
@@ -203,15 +199,17 @@ class QuadrupolarSimulatorWidget(ipw.VBox):
     def _wire_observers(self):
         self._element.observe(lambda c: self._on_element_change(), names="value")
         self._isotope.observe(lambda c: self._on_isotope_change(), names="value")
-        for w in (self._Q, self._I):
-            w.observe(lambda c: self._on_qi_change(), names="value")
+        for w in (self._I, self._gamma):
+            w.observe(lambda c: self._on_ig_change(), names="value")
+        self._cq.observe(lambda c: self._on_cq_change(), names="value")
+        self._nuq.observe(lambda c: self._on_nuq_change(), names="value")
         self._mode.observe(lambda c: self._update_visibility(), names="value")
         self._overlay.observe(lambda c: self._update_visibility(), names="value")
         for row in self._eig_cells:
             for w in row:
                 w.observe(lambda c: self._on_eig_change(), names="value")
         self._eig_fix.on_click(self._on_orthonormalize)
-        recompute_widgets = [self._B, self._gamma, self._vzz, self._eta,
+        recompute_widgets = [self._B, self._eta,
                              self._npts, self._decompose, self._second,
                              self._broad, self._da, self._db, self._dc]
         recompute_widgets += [w for row in self._cell_cells for w in row]
@@ -220,7 +218,7 @@ class QuadrupolarSimulatorWidget(ipw.VBox):
 
     # ------------------------------------------------------------- nucleus
     def _seed_from_isotope(self):
-        """Populate the isotope options for the element and seed Q, I, gamma."""
+        """Populate the isotope options for the element and seed I and gamma."""
         element = self._element.value
         options = [e[0] for e in isotopes_for(element)] + ["custom"]
         self._updating = True
@@ -229,10 +227,10 @@ class QuadrupolarSimulatorWidget(ipw.VBox):
             self._isotope.value = options[0]
             entry = isotope_entry(element, options[0])
             if entry is not None:
-                _label, spin, q, gamma = entry
-                self._Q.value = float(q)
+                _label, spin, _q, gamma = entry
                 self._I.value = float(spin)
                 self._gamma.value = float(gamma) if gamma is not None else 0.0
+            self._sync_nuq_from_cq()
         finally:
             self._updating = False
 
@@ -243,34 +241,79 @@ class QuadrupolarSimulatorWidget(ipw.VBox):
         self._recompute()
 
     def _on_isotope_change(self):
-        """User picked an isotope: seed Q, I and gamma from the built-in table."""
+        """User picked an isotope: seed I and gamma from the built-in table."""
         if self._updating:
             return
         entry = isotope_entry(self._element.value, self._isotope.value)
-        if entry is None:  # "custom": keep whatever is in the Q/I fields
+        if entry is None:  # "custom": keep whatever is in the I/gamma fields
             return
-        _label, spin, q, gamma = entry
+        _label, spin, _q, gamma = entry
         self._updating = True
         try:
-            self._Q.value = float(q)
             self._I.value = float(spin)
             # gamma is None only for spin-1/2 defaults: zero it rather than
             # keeping the previous isotope's value under the new label
             self._gamma.value = float(gamma) if gamma is not None else 0.0
+            self._sync_nuq_from_cq()  # C_q kept as typed, nu_Q follows I
         finally:
             self._updating = False
         self._recompute()
 
-    def _on_qi_change(self):
-        """Manual Q/I edit: flip the isotope dropdown to the match or 'custom'."""
+    @staticmethod
+    def _matching_isotope(element, spin, gamma):
+        """Isotope label whose (I, gamma) match the given values, or None."""
+        for label, iso_spin, _q, iso_gamma in isotopes_for(element or ""):
+            iso_gamma = iso_gamma if iso_gamma is not None else 0.0
+            if abs(spin - iso_spin) < 1e-6 and abs(gamma - iso_gamma) < 1e-4:
+                return label
+        return None
+
+    def _on_ig_change(self):
+        """Manual I/gamma edit: flip the isotope dropdown; nu_Q follows I."""
         if self._updating:
             return
-        match = matching_isotope(
-            self._element.value, float(self._Q.value), float(self._I.value))
-        if self._isotope.value != (match or "custom"):
+        match = self._matching_isotope(
+            self._element.value, float(self._I.value), float(self._gamma.value))
+        self._updating = True
+        try:
+            if self._isotope.value != (match or "custom"):
+                self._isotope.value = match or "custom"
+            self._sync_nuq_from_cq()
+        finally:
+            self._updating = False
+        self._recompute()
+
+    # ----------------------------------------------------- C_q <-> nu_Q pair
+    def _sync_nuq_from_cq(self):
+        """Refresh the nu_Q field from C_q and I (caller holds ``_updating``).
+
+        For I < 1 the conversion is singular (and there is no quadrupolar
+        spectrum): the field is disabled and keeps its last value; C_q is
+        never touched, so nothing is lost when I becomes valid again.
+        """
+        nuq = core.nu_q_from_cq(self._cq.value, self._I.value)
+        self._nuq.disabled = nuq is None
+        if nuq is not None:
+            self._nuq.value = nuq
+
+    def _on_cq_change(self):
+        if self._updating:
+            return
+        self._updating = True
+        try:
+            self._sync_nuq_from_cq()
+        finally:
+            self._updating = False
+        self._recompute()
+
+    def _on_nuq_change(self):
+        if self._updating:
+            return
+        cq = core.cq_from_nu_q(self._nuq.value, self._I.value)
+        if cq is not None:
             self._updating = True
             try:
-                self._isotope.value = match or "custom"
+                self._cq.value = cq
             finally:
                 self._updating = False
         self._recompute()
@@ -331,26 +374,16 @@ class QuadrupolarSimulatorWidget(ipw.VBox):
 
         if self._updating:
             return
-        vzz = float(self._vzz.value)
+        cq = float(self._cq.value)
         eta = float(self._eta.value)
-        q_moment = float(self._Q.value)
         spin_I = float(self._I.value)
         gamma = abs(float(self._gamma.value))
         field = float(self._B.value)
-        derived = core.derived_parameters(vzz, q_moment, spin_I, gamma, field)
-        cq, nu_Q, nu_L = derived["Cq"], derived["nu_Q"], derived["nu_L"]
+        derived = core.derived_parameters(cq, spin_I, gamma, field)
+        nu_Q, nu_L = derived["nu_Q"], derived["nu_L"]
 
-        parts = [
-            f"ν<sub>L</sub> = |γ|·B = {nu_L:.3f} MHz",
-            f"V<sub>zz</sub> = {vzz:.4f} Ha/bohr²",
-            f"η = {eta:.4f}",
-        ]
-        if cq is not None:
-            parts.append(f"C<sub>q</sub> = {cq:.4f} MHz")
-        parts.append(f"ν<sub>Q</sub> = {nu_Q:.4f} MHz" if nu_Q is not None
-                     else "ν<sub>Q</sub> = —")
-        parts.append(f"I = {spin_I:g}")
-        base_info = " &nbsp;|&nbsp; ".join(parts)
+        # everything else on this line is already visible in an input field
+        base_info = f"ν<sub>L</sub> = |γ|·B = {nu_L:.3f} MHz"
 
         mode = self._mode.value
         broad_khz = float(self._broad.value)
@@ -428,15 +461,11 @@ class QuadrupolarSimulatorWidget(ipw.VBox):
             ("B_T", field),
             ("gamma_MHz_per_T", gamma),
             ("nu_L_MHz", nu_L),
-            ("Q_1e-30_m2", q_moment),
             ("I", spin_I),
-            ("Vzz_Ha_bohr2", vzz),
+            ("Cq_MHz", cq),
+            ("nu_Q_MHz", nu_Q),
             ("eta", eta),
         ]
-        if cq is not None:
-            meta.append(("Cq_MHz", cq))
-        if nu_Q is not None:
-            meta.append(("nu_Q_MHz", nu_Q))
         meta += [
             ("broadening_FWHM_kHz", broad_khz),
             # what was actually applied (the term is dropped when nu_L = 0)

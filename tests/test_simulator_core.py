@@ -26,21 +26,30 @@ def _diagonal_tensor(vzz, eta):
     (-0.35, 0.6, -2.558, 2.5),  # 17O-like
 ])
 def test_derived_parameters_matches_tensor_path(vzz, eta, q, spin):
-    """Manual Vzz entry gives the same Cq/nu_Q as the DFT-tensor path."""
+    """Entering the DFT-derived Cq reproduces the DFT-tensor path's nu_Q."""
     ref = quadrupolar_parameters_from_tensor(_diagonal_tensor(vzz, eta), q, spin)
-    got = core.derived_parameters(vzz, q, spin, gamma=11.0, field_T=9.4)
-    assert got["Cq"] == pytest.approx(ref["Cq"])
+    got = core.derived_parameters(ref["Cq"], spin, gamma=11.0, field_T=9.4)
     assert got["nu_Q"] == pytest.approx(ref["nu_Q"])
     assert got["nu_L"] == pytest.approx(11.0 * 9.4)
 
 
+def test_cq_nuq_roundtrip():
+    for cq, spin in [(3.0, 1.5), (-1.2, 2.5), (0.7, 4.5)]:
+        nuq = core.nu_q_from_cq(cq, spin)
+        assert core.cq_from_nu_q(nuq, spin) == pytest.approx(cq)
+    # I = 3/2: nu_Q = Cq / 2
+    assert core.nu_q_from_cq(3.0, 1.5) == pytest.approx(1.5)
+    # singular for I < 1 (no quadrupole interaction)
+    assert core.nu_q_from_cq(3.0, 0.5) is None
+    assert core.cq_from_nu_q(1.5, 0.5) is None
+
+
 def test_derived_parameters_none_cases():
-    assert core.derived_parameters(0.1, 0.0, 1.5, 11.0, 9.4)["Cq"] is None
-    assert core.derived_parameters(0.1, 10.4, 0.5, 11.0, 9.4)["nu_Q"] is None
+    assert core.derived_parameters(3.0, 0.5, 11.0, 9.4)["nu_Q"] is None
     # neither the gamma sign nor the field sign may matter (nu_L = |gamma.B|)
-    assert core.derived_parameters(0.1, 10.4, 1.5, -11.0, 9.4)["nu_L"] == \
+    assert core.derived_parameters(3.0, 1.5, -11.0, 9.4)["nu_L"] == \
         pytest.approx(11.0 * 9.4)
-    assert core.derived_parameters(0.1, 10.4, 1.5, 11.0, -9.4)["nu_L"] == \
+    assert core.derived_parameters(3.0, 1.5, 11.0, -9.4)["nu_L"] == \
         pytest.approx(11.0 * 9.4)
 
 
