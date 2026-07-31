@@ -1,0 +1,21 @@
+services:
+  aiidalab:
+    build:
+      # Build context is the repo root so the Dockerfile can COPY the plugin
+      # (the root .dockerignore applies); the Dockerfile itself lives in docker/.
+      context: ..
+      dockerfile: docker/Dockerfile
+      # Host network during build: the default build network has no working
+      # DNS on hosts using the systemd-resolved stub resolver (127.0.0.53),
+      # which pip needs for the upf-tools layer.
+      network: host
+    image: aiida-qe-converse:local
+    ports:
+      - "8888:8888"
+    environment:
+      SETUP_DEFAULT_AIIDA_PROFILE: 'true'
+    volumes:
+      - aiida-qe-converse-home:/home/jovyan
+
+volumes:
+  aiida-qe-converse-home:

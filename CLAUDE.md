@@ -1,106 +1,145 @@
 # aiida-qe-converse
 
-AiiDA plugin for computing NMR chemical shielding tensors using the converse approach with Quantum ESPRESSO.
+AiiDA plugin + aiidalab-qe GUI for **NMR chemical shielding** (converse approach,
+`qe-converse.x`) and **EFG / NMR-NQR quadrupolar parameters** (`qe-efg.x`) with
+Quantum ESPRESSO. See [QE-CONVERSE](https://github.com/mammasmias/QE-CONVERSE)
+and [arXiv:2503.04664](https://arxiv.org/abs/2503.04664).
 
-The converse approach is a non-perturbative method for computing orbital magnetization (NMR chemical shifts, EPR g-tensors) in periodic systems, avoiding the ill-defined position operator problem of perturbative methods. See [arXiv:2503.04664](https://arxiv.org/abs/2503.04664) and [QE-CONVERSE](https://github.com/mammasmias/QE-CONVERSE).
+More detail lives in per-area docs: `docker/CLAUDE.md` (deployment image
+internals), `aiida_qe_converse/postprocessing/CLAUDE.md` (spectrum physics /
+formulas / units), `aiida_qe_converse/app_efg/CLAUDE.md` (EFG GUI architecture).
 
 ## Project structure
 
 ```
 aiida_qe_converse/
-  calculations/qeconverse.py    # CalcJob plugin for qe-converse.x
-  parsers/qeconverse.py         # Parser: extracts chemical shift vectors from output
-  workflows/
-    qeconverse_base.py           # BaseRestartWorkChain wrapper with crash detection
-    nmr_converse_workchain.py    # Main workflow: SCF + converse + tensor assembly
-  run_nmr_workchain.py           # CLI entry point (installed as `nmr-converse`)
-pseudos/                         # GIPAW pseudopotentials (gipaw_PBE, gipaw_PBEsol)
-setup.py                         # AiiDA entry points registration
+  calculations/   qeconverse.py, qeefg.py      # CalcJobs: write Fortran namelist, symlink SCF out/
+  parsers/        qeconverse.py                # NMR parser
+                  qeefg.py + efg_parsing.py    # EFG parser (efg_parsing = AiiDA-free core, unit-tested)
+  workflows/      common.py                    # SHARED: protocol table, pseudo lookup, SCF params, options
+                  nmr_converse_workchain.py    # SCF + 3 converse runs per atom + tensor assembly
+                  efg_workchain.py             # SCF + ONE qe-efg run (all atoms) + results
+                  qeconverse_base.py, efg_base.py  # BaseRestartWorkChains (CRASH-file handler)
+  data/nuclear.py                              # isotope Q/I table, gyromagnetic ratios, species->q_efg mapping
+  postprocessing/ quadrupolar_spectrum.py      # powder + single-crystal spectra (thesis eqs 2.28-2.33)
+                  efg_analysis.py              # recompute Vzz/eta/Cq/nu_Q/axes from stored tensor for any Q,I
+  app/ app_efg/ app_common/                    # aiidalab-qe GUI plugins (NMR, EFG, shared atom-selection base
+                                               #   + spectrum_plot.py: plot helpers shared with app_simulator)
+  app_simulator/  core.py + widget.py          # standalone AiiDAlab app: quadrupolar spectra from user-entered
+                                               #   Vzz/eta/isotope — NO aiida/aiidalab_qe imports allowed here
+  provision.py                                 # `aiida-qe-converse-setup` CLI: register codes + import pseudos
+metadata.json, setup.cfg, start.md,            # repo doubles as a standalone AiiDAlab app (symlinked into ~/apps
+post_install, quadrupolar_simulator.ipynb,     #   by the docker startup hook). NOTE: the aiidalab package reads the
+misc/logo.svg                                  #   tile metadata from setup.cfg [aiidalab], NOT metadata.json — sync both
+docker/                                        # canonical deployment image (see docker/CLAUDE.md + README.md)
+examples/codes/merlin/                         # `verdi code create --config` YAMLs for PSI Merlin7 (CLI format!)
+pseudos/gipaw_PBE*, gipaw_PBEsol/              # GIPAW UPFs shipped in-repo, imported into AiiDA groups
+run_nmr_workchain.py, run_efg_workchain.py     # CLI submit/retrieve scripts
+tests/                                         # pure-Python tests, NO AiiDA profile needed: pytest tests/ -q
 ```
-
-## How the workflow works
-
-`NmrConverseWorkChain` orchestrates:
-
-1. **SCF** via `PwBaseWorkChain` (pw.x) with `nosym=True, noinv=True` (required for NMR)
-2. **3 converse calculations per target atom** (x, y, z magnetic field directions) via `QeConverseBaseWorkChain`
-3. **Tensor assembly**: each converse run returns one column of the 3x3 shielding tensor
-4. **Isotropic shielding**: trace/3 of the assembled tensor
-
-The `get_builder_from_protocol()` class method configures everything from a protocol name.
-
-### Protocols
-
-| Protocol | ecutwfc | kpoints_distance | MPI/machine |
-|----------|---------|------------------|-------------|
-| `fast`     | 80 Ry   | 0.25 Å⁻¹         | 16          |
-| `moderate` | 90 Ry   | 0.12 Å⁻¹         | 64 (default)|
-| `precise`  | 100 Ry  | 0.08 Å⁻¹         | 128         |
-
-### Workflow inputs (key optional parameters)
-
-- `target_atoms` (List): 0-based atom indices to compute; default = all atoms
-- `electronic_type` (str): `METAL` (default) or `INSULATOR` — affects smearing defaults
-- `spin_polarized` (Bool): enables nspin=2 collinear calculation
-- `initial_magnetic_moments` (Dict): `{"Fe": 0.5, "O": 0.0}` — per-kind starting magnetization
-- `smearing_type` (Str): `fermi-dirac`, `methfessel-paxton`, `marzari-vanderbilt`, `gaussian`
-- `smearing_degauss` (Float): smearing width in Ry; insulators default to 1e-8
-- `npool` (Int): k-point pools for converse (`-nk`); 0 = auto-determine from k-mesh and MPI count
-
-### Workflow outputs
-
-- `absolute_shift_tensor_ppm`: Dict mapping atom labels (e.g. `"O1"`, `"Si2"`) to 3×3 nested list (ppm)
-- `isotropic_shielding_ppm`: Dict mapping atom labels to `{"isotropic_shielding_ppm": float}`
-
-Atom labels are constructed as `kind_name + (1-based index)` e.g. `"Fe3"`.
-
-## Key conventions
-
-- **Atom indexing**: Python-side is 0-based; Fortran-side (qe-converse.x `m_0_atom`) is 1-based. Conversion: `m_0_atom = atom_idx + 1`
-- **Pseudopotentials**: stored in AiiDA as `UpfData` nodes in named groups (e.g. `gipaw_PBE`). The workflow looks them up by element from the group via QueryBuilder.
-- **Parameters format**: converse parameters are wrapped in an `input_qeconverse` namelist key. `QeConverseBaseWorkChain.setup()` ensures this wrapping exists.
-- **Input file generation**: `QeConverseCalculation._generate_input_file()` writes Fortran namelist format (`&input_qeconverse ... /`)
-- **SCF remote folder**: symlinked into converse calculations via `remote_symlink_list` (the `out/` directory)
-- **K-pool auto-optimization**: `_compute_optimal_npool()` in the workchain finds the largest divisor of the k-point count that fits within the MPI process count; also adjusts `num_mpiprocs_per_machine` accordingly
-- **Memory**: allocated as `(_NODE_MEMORY_KB / _NODE_CORES) * mpiprocs_per_machine` per calculation; constants defined at top of `nmr_converse_workchain.py`
-
-## Parser output structure
-
-`QeConverseParser._parse_output()` returns a dict with:
-- `chemical_shift`: list of 3 floats `[sigma_x, sigma_y, sigma_z]`
-- `converged`: bool
-- `warnings`: list of warning strings
 
 ## Entry points (setup.py)
 
 ```
-console_scripts:    nmr-converse -> aiida_qe_converse.run_nmr_workchain:cli
-aiida.calculations: qeconverse   -> QeConverseCalculation
-aiida.parsers:      qeconverse   -> QeConverseParser
+console_scripts:        nmr-converse, aiida-qe-converse-setup
+aiida.calculations:     qeconverse, qeefg
+aiida.parsers:          qeconverse, qeefg
+aiida.workflows:        qeconverse.nmr_converse, qeconverse.qeconverse_base,
+                        qeconverse.efg, qeconverse.qeefg_base
+aiidalab_qe.properties: qeconverse (NMR GUI), qeefg (EFG GUI)
 ```
 
-## Dependencies
+## The two workflows
 
-- `aiida-core >= 2.0.0`
-- `aiida-quantumespresso >= 4.0.0`
-- `aiida-pseudo` (for `UpfData`)
-- `numpy`, `ase` (structure I/O)
-- External: Quantum ESPRESSO pw.x (v7.2+), qe-converse.x
+**NMR** (`NmrConverseWorkChain`): SCF with `nosym=True, noinv=True` (required),
+then 3 converse runs per target atom (x/y/z dipole directions); each returns one
+column of the 3x3 shielding tensor; isotropic shielding = trace/3.
+
+**EFG** (`EfgWorkChain`): EFG is a pure ground-state property — one SCF
+(**symmetry ON**; never reuse an NMR SCF) + **one** `qe-efg.x` run gives the full
+tensor for all atoms. Outline: setup → run_scf → inspect_scf → run_efg →
+inspect_efg → compute_results → maybe_compute_spectra → finalize.
+`target_atoms` is only a reporting filter (the calc always does all atoms).
+
+Both expose `get_builder_from_protocol()`. `EfgWorkChain` derives `withmpi`
+from the code's `with_mpi` setting (`_options_for_code` in efg_workchain.py) —
+AiiDA hard-errors when the option and the code disagree. **The NMR workchain
+does not do this yet**; mirror `_options_for_code` there if a serial code is
+ever used with it.
+
+## Critical conventions
+
+- **species → `q_efg`/`i_efg` index mapping**: `qe-efg.x` indexes these arrays
+  per ATOM TYPE in the order of the pw.x `ATOMIC_SPECIES` card, which
+  aiida-quantumespresso writes **alphabetically sorted by kind name**
+  (`calculations/__init__.py` in aiida-qe, ~line 567).
+  `data/nuclear.py::build_efg_arrays()` reproduces exactly that ordering.
+  Getting this wrong silently attaches Q/I to the wrong element — it is tested
+  explicitly (`tests/test_nuclear_mapping.py`).
+- **Units of Q**: `1e-30 m²` (= 10 mbarn); 1 barn = 100 of these. `Q = 0` means
+  "skip Cq" for that species; `ν_Q` needs `I ≥ 1`. Values that look odd are
+  usually unit confusion (e.g. ⁵⁹Co Q = 42 = 0.42 barn — correct).
+- **The EFG tensor is Q/I-independent.** Q and I only enter the final Cq/ν_Q
+  arithmetic. The workchain stores the raw symmetrized tensor (Ha/bohr²), and
+  the GUI recomputes everything from it for any user-chosen Q/I (isotope
+  switching without re-running DFT) via `postprocessing/efg_analysis.py`.
+  Parser-extracted Cq/ν_Q are "as computed with the submission-time Q".
+- **Atom indexing**: Python 0-based; Fortran 1-based (`m_0_atom = idx + 1`).
+  Atom labels are `kind_name + 1-based index` ("O1", "Si2").
+- **Namelist wrapping**: parameters live under `input_qeconverse` /
+  `input_qeefg` keys; the base workchains' `setup()` add the wrapper if missing.
+- **SCF remote folder** is symlinked into converse/efg calcs (`out/` via
+  `remote_symlink_list`).
+- **Pseudos**: GIPAW UPFs as `UpfData` in groups `gipaw_PBE` / `gipaw_PBEsol`,
+  looked up **by element symbol** of each kind (custom kind names OK). GIPAW is
+  *required* — SSSP/PseudoDojo lack the reconstruction data; the GUI says so and
+  ignores the aiidalab Advanced-step pseudo choice.
+
+## Protocols (`workflows/common.py`)
+
+`fast` / `moderate` / `precise`, with GUI aliases `balanced`→moderate,
+`stringent`→precise (aiidalab-qe passes its own names — keep the alias map).
+`precise` uses `max_memory_kb = 480000000` (~469 GB): deliberately below PSI
+Merlin7's real per-node ceiling of 483,328 MB (`RealMemory 515120` −
+`MemSpecLimit 31792`; the raw `sinfo` memory is NOT allocatable — exceeding the
+real ceiling gives instant `sbatch: Requested node configuration is not
+available`). Don't raise it back to 5e8.
+
+## aiidalab-qe GUI integration pitfalls (hard-won)
+
+- The dependency system dlinks **traits**: depend on/observe `structure_uuid`
+  (a trait), not `input_structure` (a property). Wrong name crashes the whole
+  Configuration step with `TraitError: ... has no trait`.
+- Plotly must be embedded as `go.FigureWidget(fig)` placed in the widget tree;
+  `display(fig)` into an `ipw.Output` renders nothing in this app.
+- The GUI's global protocol names are `fast/balanced/stringent` (see aliases).
+- The Resources panel crashes (`BoundedIntText max=None`) if the computer's
+  `default_mpiprocs_per_machine` is unset — the Docker startup hook sets it.
+- `examples/codes/merlin/*.yml` are **CLI** (`verdi code create --config`)
+  format. The GUI's "Set up new code" wizard reads a *different* schema from the
+  aiida-resource-registry (`aiidateam.github.io/aiida-resource-registry/database.json`),
+  whose URL is effectively hardcoded in `aiidalab_widgets_base`.
+- Requires aiida-quantumespresso ≥ 4.16 (QE 7.5 writes XML schema `qes_250521`;
+  older aiida-qe rejects it with exit 322) → Python ≥ 3.10 → hence the pinned
+  pr-1512 base image in `docker/`.
 
 ## Exit codes
 
 | Code | Location | Meaning |
 |------|----------|---------|
-| 300 | CalcJob | No retrieved folder |
-| 310 | CalcJob | Output file read/parse error |
-| 320 | CalcJob | Convergence failure |
-| 330 | CalcJob | Incomplete output |
-| 300 | BaseRestart | Unrecoverable failure (CRASH file) |
-| 300 | WorkChain | SCF failed |
-| 301 | WorkChain | Converse calculation(s) failed |
-| 302 | WorkChain | Parsing/tensor assembly failed |
+| 300/310/320/330 | CalcJobs (both) | no retrieved folder / read-parse error / no convergence / incomplete output |
+| 300 | BaseRestart (both) | unrecoverable (CRASH file found) |
+| 300/301/302 | WorkChains | SCF failed / converse-or-efg failed / parsing failed |
 
-## Common modifications
+## Testing & verification
+
+- `python -m pytest tests/ -q` — pure Python (parser against exact `efg.f90`
+  formats via `tests/sample_efg_output.py`, species mapping, spectrum physics,
+  efg_analysis, provisioning helpers). No AiiDA profile, no QE needed.
+- Static: after `pip install -e .`, `verdi plugin list aiida.workflows` shows
+  the entry points; build a builder via `get_builder_from_protocol`.
+- End-to-end smoke test: small Si+O cell, `fast` protocol, `pw-7.5` + `qe-efg`
+  codes; expect `Finished [0]` and symmetric/traceless tensors.
 
 - **Add new workchain input**: define in `spec.input()` in `NmrConverseWorkChain.define()`, add to `get_builder_from_protocol()` signature and builder assignment, add argument to `cli()` in `run_nmr_workchain.py`
 - **Change SCF parameters**: modify protocol dicts in `get_builder_from_protocol()` or pass `overrides` dict
@@ -120,3 +159,15 @@ nmr-converse --retrieve <PK>
 ```
 
 `--retrieve` prints tensor results, CPU-hour breakdown (SCF vs. converse), and exports to `nmr_results_<PK>.json`.
+
+## Deployment & provisioning
+
+- `docker/` builds the canonical image (MPI QE 7.5 + qe-converse + plugin +
+  auto-provisioning); `cd docker && docker compose up -d`. Dev override
+  `docker-compose.dev.yml` bind-mounts the source. Details: `docker/CLAUDE.md`.
+- `aiida-qe-converse-setup pseudos|codes` provisions any AiiDA profile
+  idempotently (what the container hook calls). Pseudo dir resolution:
+  `--pseudo-dir` → `$AIIDA_QE_CONVERSE_PSEUDO_DIR` →
+  `/opt/aiida-qe-converse/pseudos` → repo `pseudos/`.
+- Merlin7 cluster codes: `examples/codes/merlin/` (module-loading prepend_text,
+  `with_mpi: true`).

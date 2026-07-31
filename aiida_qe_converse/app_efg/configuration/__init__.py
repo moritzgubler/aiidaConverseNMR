@@ -1,0 +1,1 @@
+"""EFG plugin configuration subpackage."""
