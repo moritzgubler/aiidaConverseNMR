@@ -168,6 +168,14 @@ nmr-converse --retrieve <PK>
 - `aiida-qe-converse-setup pseudos|codes` provisions any AiiDA profile
   idempotently (what the container hook calls). Pseudo dir resolution:
   `--pseudo-dir` → `$AIIDA_QE_CONVERSE_PSEUDO_DIR` →
-  `/opt/aiida-qe-converse/pseudos` → repo `pseudos/`.
+  `/opt/aiida-qe-converse/pseudos` → wherever `pip` installed the
+  `aiida_qe_converse_pseudos` package (falls back to repo `pseudos/` if that
+  package isn't installed, e.g. running tests straight from a checkout).
+- The Plugin Store (`aiidalab-qe`'s in-app installer) runs
+  `pip install git+<repo> --user` — an ephemeral clone with no persisted repo
+  checkout — then `python -m aiida_qe_converse pseudos` as the post-install
+  step. This is why `pseudos/` ships as its own installable sub-package
+  (`aiida_qe_converse_pseudos`, `setup.py`'s `package_dir` remap) instead of
+  being found by a path relative to the repo root.
 - Merlin7 cluster codes: `examples/codes/merlin/` (module-loading prepend_text,
   `with_mpi: true`).

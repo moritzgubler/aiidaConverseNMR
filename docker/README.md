@@ -69,7 +69,9 @@ aiida-qe-converse-setup codes --computer localhost --with-mpi \
 ```
 
 The pseudo directory defaults to `$AIIDA_QE_CONVERSE_PSEUDO_DIR`, then
-`/opt/aiida-qe-converse/pseudos`, then the repo's `pseudos/` dir.
+`/opt/aiida-qe-converse/pseudos`, then wherever `pip` installed the plugin's
+bundled `aiida_qe_converse_pseudos` sub-package (or the repo's `pseudos/` dir
+if running unpackaged, e.g. straight from a checkout).
 
 ## Fedora / firewalld note
 

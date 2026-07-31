@@ -25,8 +25,13 @@ _DEFAULT_PSEUDO_DIRS = (
 def default_pseudo_dir():
     """Resolve the GIPAW pseudo directory.
 
-    Order: ``$AIIDA_QE_CONVERSE_PSEUDO_DIR``, then known container paths, then a
-    ``pseudos/`` directory shipped next to the package (repo layout).
+    Order: ``$AIIDA_QE_CONVERSE_PSEUDO_DIR``, then known container paths, then
+    wherever the ``aiida_qe_converse_pseudos`` package actually got installed.
+    The last one resolves correctly for both an editable repo checkout (points
+    back at the repo's ``pseudos/``) and a real ``pip install`` (e.g. the
+    Plugin Store's ``pip install git+... --user``, which leaves no repo
+    checkout behind) because it asks Python where the package lives instead of
+    guessing a path relative to this file.
     """
     env = os.environ.get("AIIDA_QE_CONVERSE_PSEUDO_DIR")
     if env:
@@ -34,8 +39,14 @@ def default_pseudo_dir():
     for candidate in _DEFAULT_PSEUDO_DIRS:
         if pathlib.Path(candidate).is_dir():
             return pathlib.Path(candidate)
-    # repo layout: <repo>/pseudos, with this file at <repo>/aiida_qe_converse/provision.py
-    return pathlib.Path(__file__).resolve().parent.parent / "pseudos"
+    try:
+        import aiida_qe_converse_pseudos
+        return pathlib.Path(aiida_qe_converse_pseudos.__file__).resolve().parent
+    except ImportError:
+        # aiida-qe-converse isn't pip-installed (e.g. tests run straight from a
+        # checkout): fall back to the repo layout, <repo>/pseudos, with this
+        # file at <repo>/aiida_qe_converse/provision.py.
+        return pathlib.Path(__file__).resolve().parent.parent / "pseudos"
 
 
 def discover_pseudo_families(pseudo_dir):

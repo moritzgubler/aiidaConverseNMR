@@ -8,10 +8,25 @@ from setuptools import setup, find_packages
 
 setup(
     name='aiida-qe-converse',
-    version='0.1.0',
-    description='AiiDA plugin for qe-converse calculations',
-    author='Your Name',
-    packages=find_packages(),
+    version='1.0.1',
+    description='AiiDA plugin + aiidalab-qe GUI for NMR shielding and EFG/NQR '
+                 'quadrupolar parameters with QE-CONVERSE',
+    author='Moritz Gubler',
+    author_email='moritz.gubler@gmail.com',
+    url='https://github.com/moritzgubler/aiidaConverseNMR',
+    license='GPL-3.0-or-later',
+    classifiers=[
+        'License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)',
+    ],
+    # `pseudos/` ships as its own package (under package_dir remap, so its name
+    # doesn't collide with other plugins' modules in the shared aiidalab kernel)
+    # so that `pip install git+...` (no persisted clone) still carries the UPFs.
+    packages=find_packages(exclude=('pseudos',)) + ['aiida_qe_converse_pseudos'],
+    package_dir={'aiida_qe_converse_pseudos': 'pseudos'},
+    include_package_data=True,
+    package_data={
+        'aiida_qe_converse_pseudos': ['**/*.upf', '**/*.UPF'],
+    },
     install_requires=[
         'aiida-core>=2.0.0',
         'aiida-quantumespresso>=4.0.0',

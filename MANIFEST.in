@@ -1,0 +1,2 @@
+recursive-include pseudos *.upf *.UPF
+include LICENSE
